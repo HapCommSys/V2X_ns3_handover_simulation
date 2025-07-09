@@ -1,26 +1,6 @@
-/* -*-  Mode: C++; c-file-style: "gnu"; indent-tabs-mode:nil; -*- */
-/* *
- * This program is free software; you can redistribute it and/or modify
- * it under the terms of the GNU General Public License version 2 as
- * published by the Free Software Foundation;
- *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
- *
- * You should have received a copy of the GNU General Public License
- * along with this program; if not, write to the Free Software
- * Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA
- *
- * Authors: Andrea Lacava <thecave003@gmail.com>
- *          Michele Polese <michele.polese@gmail.com>
- */
-
 #include "ns3/core-module.h"
 #include "ns3/network-module.h"
 #include "ns3/internet-module.h"
-#include "ns3/mobility-module.h"
 #include "ns3/applications-module.h"
 #include "ns3/point-to-point-helper.h"
 #include <ns3/lte-ue-net-device.h>
@@ -28,109 +8,16 @@
 #include "ns3/epc-helper.h"
 #include "ns3/mmwave-point-to-point-epc-helper.h"
 #include "ns3/lte-helper.h"
+#include <iostream>
+#include <fstream>
+#include <sstream>
+#include "ns3/mobility-module.h"
+#include "ns3/ns2-mobility-helper.h"
 
 using namespace ns3;
 using namespace mmwave;
 
-/**
- * Scenario Zero
- * 
- */
-
-NS_LOG_COMPONENT_DEFINE ("ScenarioZero");
-
-void
-PrintGnuplottableUeListToFile (std::string filename)
-{
-  std::ofstream outFile;
-  outFile.open (filename.c_str (), std::ios_base::out | std::ios_base::trunc);
-  if (!outFile.is_open ())
-    {
-      NS_LOG_ERROR ("Can't open file " << filename);
-      return;
-    }
-  for (NodeList::Iterator it = NodeList::Begin (); it != NodeList::End (); ++it)
-    {
-      Ptr<Node> node = *it;
-      int nDevs = node->GetNDevices ();
-      for (int j = 0; j < nDevs; j++)
-        {
-          Ptr<LteUeNetDevice> uedev = node->GetDevice (j)->GetObject<LteUeNetDevice> ();
-          Ptr<MmWaveUeNetDevice> mmuedev = node->GetDevice (j)->GetObject<MmWaveUeNetDevice> ();
-          Ptr<McUeNetDevice> mcuedev = node->GetDevice (j)->GetObject<McUeNetDevice> ();
-          if (uedev)
-            {
-              Vector pos = node->GetObject<MobilityModel> ()->GetPosition ();
-              outFile << "set label \"" << uedev->GetImsi () << "\" at " << pos.x << "," << pos.y
-                      << " left font \"Helvetica,8\" textcolor rgb \"black\" front point pt 1 ps "
-                         "0.3 lc rgb \"black\" offset 0,0"
-                      << std::endl;
-            }
-          else if (mmuedev)
-            {
-              Vector pos = node->GetObject<MobilityModel> ()->GetPosition ();
-              outFile << "set label \"" << mmuedev->GetImsi () << "\" at " << pos.x << "," << pos.y
-                      << " left font \"Helvetica,8\" textcolor rgb \"black\" front point pt 1 ps "
-                         "0.3 lc rgb \"black\" offset 0,0"
-                      << std::endl;
-            }
-          else if (mcuedev)
-            {
-              Vector pos = node->GetObject<MobilityModel> ()->GetPosition ();
-              outFile << "set label \"" << mcuedev->GetImsi () << "\" at " << pos.x << "," << pos.y
-                      << " left font \"Helvetica,8\" textcolor rgb \"black\" front point pt 1 ps "
-                         "0.3 lc rgb \"black\" offset 0,0"
-                      << std::endl;
-            }
-        }
-    }
-}
-
-void
-PrintGnuplottableEnbListToFile (std::string filename)
-{
-  std::ofstream outFile;
-  outFile.open (filename.c_str (), std::ios_base::out | std::ios_base::trunc);
-  if (!outFile.is_open ())
-    {
-      NS_LOG_ERROR ("Can't open file " << filename);
-      return;
-    }
-  for (NodeList::Iterator it = NodeList::Begin (); it != NodeList::End (); ++it)
-    {
-      Ptr<Node> node = *it;
-      int nDevs = node->GetNDevices ();
-      for (int j = 0; j < nDevs; j++)
-        {
-          Ptr<LteEnbNetDevice> enbdev = node->GetDevice (j)->GetObject<LteEnbNetDevice> ();
-          Ptr<MmWaveEnbNetDevice> mmdev = node->GetDevice (j)->GetObject<MmWaveEnbNetDevice> ();
-          if (enbdev)
-            {
-              Vector pos = node->GetObject<MobilityModel> ()->GetPosition ();
-              outFile << "set label \"" << enbdev->GetCellId () << "\" at " << pos.x << "," << pos.y
-                      << " left font \"Helvetica,8\" textcolor rgb \"blue\" front  point pt 4 ps "
-                         "0.3 lc rgb \"blue\" offset 0,0"
-                      << std::endl;
-            }
-          else if (mmdev)
-            {
-              Vector pos = node->GetObject<MobilityModel> ()->GetPosition ();
-              outFile << "set label \"" << mmdev->GetCellId () << "\" at " << pos.x << "," << pos.y
-                      << " left font \"Helvetica,8\" textcolor rgb \"red\" front  point pt 4 ps "
-                         "0.3 lc rgb \"red\" offset 0,0"
-                      << std::endl;
-            }
-        }
-    }
-}
-
-void
-PrintPosition (Ptr<Node> node)
-{
-  Ptr<MobilityModel> model = node->GetObject<MobilityModel> ();
-  NS_LOG_UNCOND ("Position +****************************** " << model->GetPosition () << " at time "
-                                                             << Simulator::Now ().GetSeconds ());
-}
+NS_LOG_COMPONENT_DEFINE ("SimpleDemo");
 
 static ns3::GlobalValue g_bufferSize ("bufferSize", "RLC tx buffer size (MB)",
                                       ns3::UintegerValue (10),
@@ -167,8 +54,8 @@ static ns3::GlobalValue
                              "E2 Indication Periodicity reports (value in seconds)",
                              ns3::DoubleValue (0.1), ns3::MakeDoubleChecker<double> (0.01, 2.0));
 
-static ns3::GlobalValue g_simTime ("simTime", "Simulation time in seconds", ns3::DoubleValue (2),
-                                   ns3::MakeDoubleChecker<double> (0.1, 1000.0));
+// static ns3::GlobalValue g_simTime ("simTime", "Simulation time in seconds", ns3::DoubleValue (2),
+//                                    ns3::MakeDoubleChecker<double> (0.1, 100.0));
 
 static ns3::GlobalValue g_outageThreshold ("outageThreshold",
                                            "SNR threshold for outage events [dB]", // use -1000.0 with NoAuto
@@ -199,30 +86,74 @@ static ns3::GlobalValue g_controlFileName ("controlFileName",
                                            "The path to the control file (can be absolute)",
                                            ns3::StringValue (""),
                                            ns3::MakeStringChecker ());
-
-int
-main (int argc, char *argv[])
+void my_function(NetDeviceContainer lteEnbDevs)
 {
-  LogComponentEnableAll (LOG_PREFIX_ALL);
-  // LogComponentEnable ("RicControlMessage", LOG_LEVEL_ALL);
-  // LogComponentEnable ("Asn1Types", LOG_LEVEL_LOGIC);
-  // LogComponentEnable ("E2Termination", LOG_LEVEL_DEBUG);
+    Ptr<LteEnbRrc> m_rrc = DynamicCast<LteEnbNetDevice>(lteEnbDevs.Get(0))->GetRrc();  // LteEnbNetDevice
+    auto ueMap = m_rrc->GetUeMap();
+    uint16_t targetCellId = 3;
+    NS_LOG_UNCOND ("\n m_rrc: " << m_rrc << " ueMapSize: " << ueMap.size());
+    for (auto ue : ueMap)
+    {
+      uint64_t imsi = ue.second->GetImsi();
+      NS_LOG_UNCOND (" ue: " << ue  << " " << typeid(ue).name() << " ue.second " << ue.second << " " << typeid(ue.second).name() << " ue.first: "  << ue.first << " " << typeid(ue.first).name() << " imsi: " << imsi);
+      
+      m_rrc->PerformHandoverToTargetCell (imsi, targetCellId);
 
-  // LogComponentEnable ("LteEnbRrc", LOG_LEVEL_DEBUG);
-  LogComponentEnable ("LteEnbNetDevice", LOG_LEVEL_DEBUG);
-  // LogComponentEnable ("MmWaveEnbNetDevice", LOG_LEVEL_DEBUG);
-  // LogComponentEnable ("McUeNetDevice",LOG_LEVEL_DEBUG );
-        
-  // The maximum X coordinate of the scenario
-  double maxXAxis = 4000;
-  // The maximum Y coordinate of the scenario
-  double maxYAxis = 4000;
+    }
+}
 
-  // Command line arguments
-  CommandLine cmd;
-  cmd.Parse (argc, argv);
+// Prints actual position and velocity when a course change event occurs
+static void
+CourseChange (std::ostream *os, std::string foo, Ptr<const MobilityModel> mobility)
+{
+  Vector pos = mobility->GetPosition (); // Get position
+  Vector vel = mobility->GetVelocity (); // Get velocity
 
-  bool harqEnabled = true;
+  // Prints position and velocities
+  *os << Simulator::Now () << " POS: x=" << pos.x << ", y=" << pos.y
+      << ", z=" << pos.z << "; VEL:" << vel.x << ", y=" << vel.y
+      << ", z=" << vel.z << std::endl;
+}
+
+
+// Example to use ns2 traces file in ns3
+int main (int argc, char *argv[])
+{
+  std::string traceFile;
+  std::string logFile;
+
+  int    nodeNum;
+  double duration;
+
+  // Enable logging from the ns2 helper
+//   LogComponentEnable ("Ns2MobilityHelper",LOG_LEVEL_DEBUG);
+//   LogComponentEnable ("MmWaveEnbNetDevice", LOG_LEVEL_DEBUG);
+
+  // Parse command line attribute
+  CommandLine cmd (__FILE__);
+  cmd.AddValue ("traceFile", "Ns2 movement trace file", traceFile);
+  cmd.AddValue ("nodeNum", "Number of nodes", nodeNum);
+  cmd.AddValue ("duration", "Duration of Simulation", duration);
+  cmd.AddValue ("logFile", "Log file", logFile);
+  cmd.Parse (argc,argv);
+
+  // Check command line arguments
+  if (traceFile.empty () || nodeNum <= 0 || duration <= 0 || logFile.empty ())
+    {
+      std::cout << "Usage of " << argv[0] << " :\n\n"
+      "./waf --run \"ns2-mobility-trace"
+      " --traceFile=src/mobility/examples/default.ns_movements"
+      " --nodeNum=2 --duration=100.0 --logFile=ns2-mob.log\" \n\n"
+      "NOTE: ns2-traces-file could be an absolute or relative path. You could use the file default.ns_movements\n"
+      "      included in the same directory of this example file.\n\n"
+      "NOTE 2: Number of nodes present in the trace file must match with the command line argument and must\n"
+      "        be a positive number. Note that you must know it before to be able to load it.\n\n"
+      "NOTE 3: Duration must be a positive number. Note that you must know it before to be able to load it.\n\n";
+
+      return 0;
+    }
+
+   bool harqEnabled = true;
 
   UintegerValue uintegerValue;
   BooleanValue booleanValue;
@@ -332,41 +263,79 @@ main (int argc, char *argv[])
   Config::SetDefault ("ns3::LteEnbRrc::SecondaryCellHandoverMode", StringValue (handoverMode));
   Config::SetDefault ("ns3::LteEnbRrc::HoSinrDifference", DoubleValue (hoSinrDifference));
 
-  // Carrier bandwidth in Hz
+  int numerology = 3;
+//   // Carrier bandwidth in Hz
+//   double bandwidth = 400e6;         //20e6;
+//   // Center frequency in Hz
+//   double centerFrequency = 28e9;    //3.5e9;
   double bandwidth = 20e6;
-  // Center frequency in Hz
   double centerFrequency = 3.5e9;
   // Distance between the mmWave BSs and the two co-located LTE and mmWave BSs in meters
-  double isd = 1000; // (interside distance)
+//   double isd = 1000; // (interside distance)
   // Number of antennas in each UE
   int numAntennasMcUe = 1;
   // Number of antennas in each mmWave BS
   int numAntennasMmWave = 1;
 
-  NS_LOG_INFO ("Bandwidth " << bandwidth << " centerFrequency " << double (centerFrequency)
-                            << " isd " << isd << " numAntennasMcUe " << numAntennasMcUe
-                            << " numAntennasMmWave " << numAntennasMmWave);
+//   NS_LOG_INFO ("Bandwidth " << bandwidth << " centerFrequency " << double (centerFrequency)
+//                             << " isd " << isd << " numAntennasMcUe " << numAntennasMcUe
+//                             << " numAntennasMmWave " << numAntennasMmWave);
 
   // Set the number of antennas in the devices
   Config::SetDefault ("ns3::McUeNetDevice::AntennaNum", UintegerValue (numAntennasMcUe));
   Config::SetDefault ("ns3::MmWaveNetDevice::AntennaNum", UintegerValue (numAntennasMmWave));
   Config::SetDefault ("ns3::MmWavePhyMacCommon::Bandwidth", DoubleValue (bandwidth));
   Config::SetDefault ("ns3::MmWavePhyMacCommon::CenterFreq", DoubleValue (centerFrequency));
+  Config::SetDefault ("ns3::MmWavePhyMacCommon::Numerology", EnumValue (numerology));
 
   Ptr<MmWaveHelper> mmwaveHelper = CreateObject<MmWaveHelper> ();
-  mmwaveHelper->SetPathlossModelType ("ns3::ThreeGppUmaPropagationLossModel");
-  mmwaveHelper->SetChannelConditionModelType ("ns3::ThreeGppUmaChannelConditionModel");
+  mmwaveHelper->SetPathlossModelType ("ns3::ThreeGppUmiStreetCanyonPropagationLossModel");
+  mmwaveHelper->SetChannelConditionModelType ("ns3::ThreeGppUmiStreetCanyonChannelConditionModel");
+  
+//   // Create Ns2MobilityHelper with the specified trace log file as parameter
+//   Ns2MobilityHelper ns2 = Ns2MobilityHelper (traceFile);
 
+//   // Create all nodes.
+//   NodeContainer stas;
+//   stas.Create (nodeNum);
+
+//   ns2.Install (); // configure movements for each node, while reading trace file
+
+// for (int i = 0; i < nodeNum; i++)
+// {
+//   NS_LOG_UNCOND ("Node " << i << " MM is " << stas.Get(i)->GetObject<MobilityModel> ());
+// }
+  
+  uint32_t ues = 2;
+  int nUeNodes = ues; //* nMmWaveEnbNodes;
+  // create LTE, mmWave eNB nodes and UE node
+  NodeContainer ueNodes;  
+  ueNodes.Create (nUeNodes);
   Ptr<MmWavePointToPointEpcHelper> epcHelper = CreateObject<MmWavePointToPointEpcHelper> ();
   mmwaveHelper->SetEpcHelper (epcHelper);
-
-  uint8_t nMmWaveEnbNodes = 4;
+  Ns2MobilityHelper uemobility = Ns2MobilityHelper (traceFile);
+  uemobility.Install();
+  for (int i = 0; i < nUeNodes; i++)
+  {
+    NS_LOG_UNCOND ("Node " << i << " MM is " << ueNodes.Get(i)->GetObject<MobilityModel> ());
+  }
+//   NodeContainer others;
+//   others.Create (1);
+//   MobilityHelper mob;
+//   Ptr<ListPositionAllocator> pos = CreateObject<ListPositionAllocator> ();
+//   pos->Add (Vector (10, 10, 10));
+//   mob.SetMobilityModel ("ns3::ConstantPositionMobilityModel");
+//   mob.SetPositionAllocator (pos);
+//   mob.Install (others);
+//   NS_LOG_UNCOND ("Node MM is " << others.Get(0)->GetObject<MobilityModel> ());
+  uint16_t length = 4000;
+  uint8_t diff = 250;
+  uint8_t nMmWaveEnbNodes = length / 500;
   uint8_t nLteEnbNodes = 1;
-  uint32_t ues = 3;
-  uint8_t nUeNodes = ues * nMmWaveEnbNodes;
 
-  NS_LOG_INFO (" Bandwidth " << bandwidth << " centerFrequency " << double (centerFrequency)
-                             << " isd " << isd << " numAntennasMcUe " << numAntennasMcUe
+   NS_LOG_INFO (" Bandwidth " << bandwidth << " centerFrequency " << double (centerFrequency)
+                            //  << " isd " << isd 
+                             << " numAntennasMcUe " << numAntennasMcUe
                              << " numAntennasMmWave " << numAntennasMmWave << " nMmWaveEnbNodes "
                              << unsigned (nMmWaveEnbNodes));
 
@@ -393,72 +362,37 @@ main (int argc, char *argv[])
   Ptr<Ipv4StaticRouting> remoteHostStaticRouting =
       ipv4RoutingHelper.GetStaticRouting (remoteHost->GetObject<Ipv4> ());
   remoteHostStaticRouting->AddNetworkRouteTo (Ipv4Address ("7.0.0.0"), Ipv4Mask ("255.0.0.0"), 1);
-
-  // create LTE, mmWave eNB nodes and UE node
-  NodeContainer ueNodes;
+  // Position
   NodeContainer mmWaveEnbNodes;
   NodeContainer lteEnbNodes;
   NodeContainer allEnbNodes;
   mmWaveEnbNodes.Create (nMmWaveEnbNodes);
   lteEnbNodes.Create (nLteEnbNodes);
-  ueNodes.Create (nUeNodes);
   allEnbNodes.Add (lteEnbNodes);
   allEnbNodes.Add (mmWaveEnbNodes);
 
-  // Position
-  Vector centerPosition = Vector (maxXAxis / 2, maxYAxis / 2, 3);
-
-  // Install Mobility Model
+  uint8_t y_center = 0;
+    // Install Mobility Model
   Ptr<ListPositionAllocator> enbPositionAlloc = CreateObject<ListPositionAllocator> ();
-
-  // We want a center with one LTE enb and one mmWave co-located in the same place
-  enbPositionAlloc->Add (centerPosition);
-  enbPositionAlloc->Add (centerPosition);
-
-  double x, y;
-  double nConstellation = nMmWaveEnbNodes - 1;
-
-  // This guarantee that each of the rest BSs is placed at the same distance from the two co-located in the center
-  for (int8_t i = 0; i < nConstellation; ++i)
-    {
-      x = isd * cos ((2 * M_PI * i) / (nConstellation));
-      y = isd * sin ((2 * M_PI * i) / (nConstellation));
-      enbPositionAlloc->Add (Vector (centerPosition.x + x, centerPosition.y + y, 3));
-    }
-
+  enbPositionAlloc->Add (Vector (length / 2 -diff, y_center + 12, 10));
+  enbPositionAlloc->Add (Vector (0 * 500 + diff, y_center - 12, 10));
+  enbPositionAlloc->Add (Vector (1 * 500 + diff, y_center + 12, 10));
+  enbPositionAlloc->Add (Vector (2 * 500 + diff, y_center - 12, 10));
+  enbPositionAlloc->Add (Vector (3 * 500 + diff, y_center + 12, 10));
+  enbPositionAlloc->Add (Vector (4 * 500 + diff, y_center - 12, 10));
+  enbPositionAlloc->Add (Vector (5 * 500 + diff, y_center + 12, 10));
+  enbPositionAlloc->Add (Vector (6 * 500 + diff, y_center - 12, 10));
+  enbPositionAlloc->Add (Vector (7 * 500 + diff, y_center + 12, 10));
   MobilityHelper enbmobility;
   enbmobility.SetMobilityModel ("ns3::ConstantPositionMobilityModel");
   enbmobility.SetPositionAllocator (enbPositionAlloc);
   enbmobility.Install (allEnbNodes);
 
-  MobilityHelper uemobility;
-
-  Ptr<UniformDiscPositionAllocator> uePositionAlloc = CreateObject<UniformDiscPositionAllocator> ();
-
-  uePositionAlloc->SetX (centerPosition.x);
-  uePositionAlloc->SetY (centerPosition.y);
-  uePositionAlloc->SetRho (isd);
-  Ptr<UniformRandomVariable> speed = CreateObject<UniformRandomVariable> ();
-  speed->SetAttribute ("Min", DoubleValue (2.0));
-  speed->SetAttribute ("Max", DoubleValue (4.0));
-
-  uemobility.SetMobilityModel ("ns3::RandomWalk2dOutdoorMobilityModel", "Speed",
-                               PointerValue (speed), "Bounds",
-                               RectangleValue (Rectangle (0, maxXAxis, 0, maxYAxis)));
-  uemobility.SetPositionAllocator (uePositionAlloc);
-  uemobility.Install (ueNodes);
-
-  // u_int8_t i = 1;
-  // NS_LOG_UNCOND (" i " << i++);
   // Install mmWave, lte, mc Devices to the nodes
   NetDeviceContainer lteEnbDevs = mmwaveHelper->InstallLteEnbDevice (lteEnbNodes);
-  // NS_LOG_UNCOND (" i " << i++);
   NetDeviceContainer mmWaveEnbDevs = mmwaveHelper->InstallEnbDevice (mmWaveEnbNodes);
-  // NS_LOG_UNCOND (" i " << i++);
   NetDeviceContainer mcUeDevs = mmwaveHelper->InstallMcUeDevice (ueNodes);
-
-  // NS_LOG_UNCOND (" i " << i++);
-
+  
   // Install the IP stack on the UEs
   internet.Install (ueNodes);
   Ipv4InterfaceContainer ueIpIface;
@@ -504,50 +438,22 @@ main (int argc, char *argv[])
       dlClient.SetAttribute ("PacketSize", UintegerValue (1280));
       clientApp.Add (dlClient.Install (remoteHost));
     }
-
-  // Start applications
-  GlobalValue::GetValueByName ("simTime", doubleValue);
-  double simTime = doubleValue.Get ();
   sinkApp.Start (Seconds (0));
 
   clientApp.Start (MilliSeconds (100));
-  clientApp.Stop (Seconds (simTime - 0.1));
+  clientApp.Stop (Seconds (duration - 0.1));
+  
+  // open log file for output
+  std::ofstream os;
+  os.open (logFile.c_str ());
+  // Configure callback for logging
+  Config::Connect ("/NodeList/*/$ns3::MobilityModel/CourseChange",
+                   MakeBoundCallback (&CourseChange, &os));
 
-  // int numPrints = 5;
-  // for (int i = 0; i < numPrints; i++)
-  //   {
-  //     for (uint32_t j = 0; j < ueNodes.GetN (); j++)
-  //       {
-  //         Simulator::Schedule (Seconds (i * simTime / numPrints), &PrintPosition, ueNodes.Get (j));
-  //       }
-  //   }
-
-  if (enableTraces)
-    {
-      mmwaveHelper->EnableTraces ();
-    }
-
-  // trick to enable PHY traces for the LTE stack
-  Ptr<LteHelper> lteHelper = CreateObject<LteHelper> ();
-  lteHelper->Initialize ();
-  lteHelper->EnablePhyTraces ();
-  lteHelper->EnableMacTraces ();
-
-  // Since nodes are randomly allocated during each run we always need to print their positions
-  PrintGnuplottableUeListToFile ("ues.txt");
-  PrintGnuplottableEnbListToFile ("enbs.txt");
-
-  bool run = true;
-  if (run)
-    {
-      NS_LOG_UNCOND ("Simulation time is " << simTime << " seconds ");
-      Simulator::Stop (Seconds (simTime));
-      NS_LOG_INFO ("Run Simulation.");
-      Simulator::Run ();
-    }
-
-  NS_LOG_INFO (lteHelper);
+  Simulator::Stop (Seconds (duration));
+  Simulator::Run ();
   Simulator::Destroy ();
-  NS_LOG_INFO ("Done.");
+
+  os.close (); // close log file
   return 0;
 }

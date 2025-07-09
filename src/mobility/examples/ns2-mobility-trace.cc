@@ -109,16 +109,41 @@ int main (int argc, char *argv[])
   // Create Ns2MobilityHelper with the specified trace log file as parameter
   Ns2MobilityHelper ns2 = Ns2MobilityHelper (traceFile);
 
-  // open log file for output
-  std::ofstream os;
-  os.open (logFile.c_str ());
-
   // Create all nodes.
   NodeContainer stas;
   stas.Create (nodeNum);
 
   ns2.Install (); // configure movements for each node, while reading trace file
 
+for (int i = 0; i < nodeNum; i++)
+{
+  NS_LOG_UNCOND ("Node " << i << " MM is " << stas.Get(i)->GetObject<MobilityModel> ());
+}
+  // Ns2MobilityHelper uemobility = Ns2MobilityHelper (traceFile);
+  // uint32_t ues = 2;
+  // int nUeNodes = ues; //* nMmWaveEnbNodes;
+  // // create LTE, mmWave eNB nodes and UE node
+  // NodeContainer ueNodes;  
+  // ueNodes.Create (nUeNodes);
+  // uemobility.Install();
+  // for (int i = 0; i < nUeNodes; i++)
+  // {
+  //   NS_LOG_UNCOND ("Node " << i << " MM is " << ueNodes.Get(i)->GetObject<MobilityModel> ());
+  // }
+  NodeContainer others;
+  others.Create (1);
+  MobilityHelper mob;
+  Ptr<ListPositionAllocator> pos = CreateObject<ListPositionAllocator> ();
+  pos->Add (Vector (10, 10, 10));
+  mob.SetMobilityModel ("ns3::ConstantPositionMobilityModel");
+  mob.SetPositionAllocator (pos);
+  mob.Install (others);
+  NS_LOG_UNCOND ("Node MM is " << others.Get(0)->GetObject<MobilityModel> ());
+  
+  
+  // open log file for output
+  std::ofstream os;
+  os.open (logFile.c_str ());
   // Configure callback for logging
   Config::Connect ("/NodeList/*/$ns3::MobilityModel/CourseChange",
                    MakeBoundCallback (&CourseChange, &os));

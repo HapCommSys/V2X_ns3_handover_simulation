@@ -4032,7 +4032,8 @@ LteEnbRrc::PerformHandover(uint64_t imsi)
           NS_LOG_INFO ("PerformHandover ----- handover from "
                        << m_lastMmWaveCell[imsi] << " to " << handoverInfo.targetCellId
                        << " at time " << Simulator::Now ().GetSeconds ());
-
+          // std::cout <<"PerformHandover -----" << imsi << " handover from " << m_lastMmWaveCell[imsi] << 
+          //         " to " << handoverInfo.targetCellId << " at time " << Simulator::Now().GetSeconds() <<std::endl;
           // trigger ho via X2
           EpcX2SapProvider::SecondaryHandoverParams params;
           params.imsi = imsi;
@@ -4100,7 +4101,7 @@ LteEnbRrc::PerformHandoverToTargetCell (uint64_t imsi, uint16_t targetCellId)
     if(!onHandoverImsi)
     {
       // The new secondary cell HO procedure does not require to switch to LTE
-      NS_LOG_INFO("PerformHandover ----- handover from " << m_lastMmWaveCell[imsi] << 
+      NS_LOG_INFO("PerformHandover ----- " << imsi << " handover from " << m_lastMmWaveCell[imsi] << 
                   " to " << targetCellId << " at time " << Simulator::Now().GetSeconds());
 
       // trigger ho via X2
@@ -4111,6 +4112,8 @@ LteEnbRrc::PerformHandoverToTargetCell (uint64_t imsi, uint16_t targetCellId)
       m_x2SapProvider->SendMcHandoverRequest(params);
 
       m_mmWaveCellSetupCompleted[imsi] = false;
+      std::cout <<"PerformHandover ----- handover from " << m_lastMmWaveCell[imsi] << 
+                  " to " << targetCellId << " at time " << Simulator::Now().GetSeconds() <<std::endl;
     }
     else
     {

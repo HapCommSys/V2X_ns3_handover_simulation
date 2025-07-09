@@ -210,6 +210,8 @@ main (int argc, char *argv[])
 
   // LogComponentEnable ("LteEnbNetDevice", LOG_LEVEL_ALL);
   LogComponentEnable ("MmWaveEnbNetDevice", LOG_LEVEL_DEBUG);
+  // LogComponentEnable ("MmWaveBeamformingModel", LOG_LEVEL_ALL);
+  // LogComponentEnable ("MmWaveHelper", LOG_LEVEL_FUNCTION);
 
   // The maximum X coordinate of the scenario
   double maxXAxis = 4000;

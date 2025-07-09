@@ -112,9 +112,10 @@ main (int argc, char *argv[])
 {
   LogComponentEnableAll (LOG_PREFIX_ALL);
   LogComponentEnable ("LteEnbNetDevice", LOG_LEVEL_DEBUG);
-  LogComponentEnable ("RicControlMessage", LOG_LEVEL_INFO);
-  // LogComponentEnable ("MmWaveEnbNetDevice", LOG_LEVEL_DEBUG);
-  // LogComponentEnable ("LteEnbRrc", LOG_LEVEL_INFO);
+  LogComponentEnable ("RicControlMessage", LOG_LEVEL_ALL);
+  // LogComponentEnable ("Asn1Types", LOG_LEVEL_ALL);
+  LogComponentEnable ("MmWaveEnbNetDevice", LOG_LEVEL_DEBUG);
+  // LogComponentEnable ("LteEnbRrc", LOG_LEVEL_DEBUG);
 
 
   // The maximum X coordinate of the scenario

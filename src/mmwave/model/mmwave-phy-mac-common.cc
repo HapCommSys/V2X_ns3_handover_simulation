@@ -55,7 +55,7 @@ MmWavePhyMacCommon::GetTypeId (void)
                    MakeDoubleChecker<double> ())
     .AddAttribute ("CenterFreq",
                    "The center frequency in Hz", 
-                   DoubleValue (28e9),
+                   DoubleValue (3.5e9),
                    MakeDoubleAccessor (&MmWavePhyMacCommon::m_centerFrequency),
                    MakeDoubleChecker<double> ())
     .AddAttribute ("UlSchedDelay",
@@ -133,6 +133,7 @@ MmWavePhyMacCommon::SetBandwidth (double bw)
   
   m_numRbs = std::ceil(bw/m_rbWidth);  // The amount of RBs is fixed to 1 as only TDMA is supported
   m_numRefSc = REF_SUBCARRIERS_PER_RB*m_numRbs; 
+  NS_LOG_UNCOND ("Number of RB: " << m_numRbs);
 }
 
 } // namespace mmwave

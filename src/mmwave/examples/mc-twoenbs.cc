@@ -474,7 +474,7 @@ main (int argc, char *argv[])
   Config::SetDefault ("ns3::ThreeGppAntennaArrayModel::IsotropicElements", BooleanValue (true)); 
 
   Ptr<MmWaveHelper> mmwaveHelper = CreateObject<MmWaveHelper> ();
-  mmwaveHelper->SetPathlossModelType ("ns3::ThreeGppUmiStreetCanyonPropagationLossModel");
+  mmwaveHelper->SetPathlossModelType ("ns3::ThreeGppUmaPropagationLossModel");
   mmwaveHelper->SetChannelConditionModelType ("ns3::BuildingsChannelConditionModel");
 
   Ptr<MmWavePointToPointEpcHelper> epcHelper = CreateObject<MmWavePointToPointEpcHelper> ();
