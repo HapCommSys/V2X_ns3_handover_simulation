@@ -154,6 +154,36 @@ add_subdirectory(src)
 # Build NS library examples
 add_subdirectory(examples)
 
+# ===== libsumo =====
+find_path(SUMO_INCLUDE_DIR
+  NAMES libsumo/libsumo.h
+  HINTS $ENV{SUMO_HOME}
+  PATH_SUFFIXES src
+)
+
+find_library(SUMOCPP_LIBRARY
+  NAMES sumocpp
+  HINTS $ENV{SUMO_HOME}
+  PATH_SUFFIXES bin
+)
+
+if(NOT SUMO_INCLUDE_DIR)
+  message(FATAL_ERROR "Could not find libsumo headers. Please set SUMO_HOME correctly.")
+endif()
+
+if(NOT SUMOCPP_LIBRARY)
+  message(FATAL_ERROR "Could not find sumocpp library. Please set SUMO_HOME correctly.")
+endif()
+
+message(STATUS "SUMO include dir: ${SUMO_INCLUDE_DIR}")
+message(STATUS "SUMO library    : ${SUMOCPP_LIBRARY}")
+
+# Minimal/global way: let later targets in this directory tree see libsumo
+include_directories(${SUMO_INCLUDE_DIR})
+link_libraries(${SUMOCPP_LIBRARY})
+# ===================
+
+
 # Build scratch/simulation scripts
 add_subdirectory(scratch)
 
