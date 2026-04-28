@@ -54,6 +54,7 @@
 #include <ns3/nstime.h>
 #include <ns3/object.h>
 #include <ns3/traced-callback.h>
+// #include <ns3/application-container.h>
 
 #include <map>
 #include <set>
@@ -76,6 +77,8 @@ class Packet;
 
 typedef std::map<uint64_t, double> ImsiSinrMap;
 typedef std::map<uint16_t, double> CellSinrMap;
+extern std::map<uint64_t, double> latencyMap;
+// extern std::vector<ApplicationContainer> ueSendApps;
 
 /**
  * \ingroup lte
@@ -1265,6 +1268,10 @@ class LteEnbRrc : public Object
         DYNAMIC_TTT = 2,
         THRESHOLD = 3,
         NO_AUTOMATIC_HANDOVER = 4,
+        THRESHOLD_SEAMLESS = 5,
+        FIXED_TTT_SEAMLESS = 6,
+        DYNAMIC_TTT_SEAMLESS = 7,
+        GREEDY = 8
     };
 
     struct HandoverEventInfo
@@ -1652,6 +1659,11 @@ class LteEnbRrc : public Object
      */
     void EvictUsersFromSecondaryCell();
 
+    HandoverMode m_handoverMode;
+    std::map<uint64_t, uint16_t> m_bestMmWaveCellForImsiMap;
+    std::map<uint64_t, CellSinrMap> m_imsiCellSinrMap;
+
+
   private:
     /**
      * Allocate a new SRS configuration index for a new UE.
@@ -1717,6 +1729,10 @@ class LteEnbRrc : public Object
                                              double sinrDifference,
                                              uint16_t maxSinrCellId,
                                              double maxSinrDb);
+    void ThresholdBasedSeamlessSecondaryCellHandover(std::map<uint64_t, CellSinrMap>::iterator imsiIter,
+                                             double sinrDifference,
+                                             uint16_t maxSinrCellId,
+                                             double maxSinrDb);
 
     /**
      * Trigger an handover according to certain conditions on the SINR and the TTT
@@ -1729,11 +1745,15 @@ class LteEnbRrc : public Object
                           double sinrDifference,
                           uint16_t maxSinrCellId,
                           double maxSinrDb);
+    void TttBasedSeamlessHandover(std::map<uint64_t, CellSinrMap>::iterator imsiIter,
+                          double sinrDifference,
+                          uint16_t maxSinrCellId,
+                          double maxSinrDb);
 
     /**
      * Compute the TTT according to the sinrDifference and the dynamic handover algorithm
      */
-    uint8_t ComputeTtt(double sinrDifference);
+    uint64_t ComputeTtt(double sinrDifference);
 
     /**
      * Method that can be scheduled to perform an handover
@@ -2001,18 +2021,18 @@ class LteEnbRrc : public Object
     // for LTE eNBs
     std::map<uint16_t, ImsiSinrMap> m_cellSinrMap;
     uint16_t m_numNewSinrReports;
-    std::map<uint64_t, uint16_t> m_bestMmWaveCellForImsiMap;
+    // std::map<uint64_t, uint16_t> m_bestMmWaveCellForImsiMap;
     std::map<uint64_t, uint16_t> m_lastMmWaveCell;
     std::map<uint64_t, bool> m_mmWaveCellSetupCompleted;
     std::map<uint64_t, bool> m_imsiUsingLte;
-    std::map<uint64_t, CellSinrMap> m_imsiCellSinrMap;
+    // std::map<uint64_t, CellSinrMap> m_imsiCellSinrMap;
     std::map<uint64_t, uint16_t> m_imsiRntiMap;
     std::map<uint16_t, uint64_t> m_rntiImsiMap;
 
     // sleep mode for mmWave/NR BSs controlled by the LTE eNB
     std::map<uint16_t, bool> m_allowHandoverTo; // cellId, true if HO is allowed, false if not
 
-    HandoverMode m_handoverMode;
+    // HandoverMode m_handoverMode;
 
     // TTT based handover management
     HandoverEventMap m_imsiHandoverEventsMap;
@@ -2021,9 +2041,9 @@ class LteEnbRrc : public Object
 
     long double m_outageThreshold;
 
-    uint8_t m_fixedTttValue;
-    uint8_t m_minDynTttValue;
-    uint8_t m_maxDynTttValue;
+    uint64_t m_fixedTttValue;
+    uint64_t m_minDynTttValue;
+    uint64_t m_maxDynTttValue;
     double m_minDiffTttValue;
     double m_maxDiffTttValue;
 
