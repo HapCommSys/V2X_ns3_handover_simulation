@@ -825,7 +825,7 @@ MmWaveFlexTtiMacScheduler::DoSchedTriggerReq(
                 NS_ASSERT(harqId == dciInfoReTx.m_harqProcess);
                 // NS_ASSERT(itStat->second.at (harqId) > 0);
                 NS_ASSERT(itStat->second.at(harqId) - 1 == dciInfoReTx.m_rv);
-                if (dciInfoReTx.m_rv == 3) // maximum number of retx reached -> drop process
+                if (dciInfoReTx.m_rv == 4) // maximum number of retx reached -> drop process
                 {
                     NS_LOG_INFO("Max number of retransmissions reached -> drop process");
                     itStat->second.at(harqId) = 0;
@@ -1005,7 +1005,7 @@ MmWaveFlexTtiMacScheduler::DoSchedTriggerReq(
                 NS_ASSERT(harqId == dciInfoReTx.m_harqProcess);
                 NS_ASSERT(itStat->second.at(harqId) > 0);
                 NS_ASSERT(itStat->second.at(harqId) - 1 == dciInfoReTx.m_rv);
-                if (dciInfoReTx.m_rv == 3)
+                if (dciInfoReTx.m_rv == 4)
                 {
                     NS_LOG_INFO("Max number of retransmissions reached (UL)-> drop process");
                     itStat->second.at(harqId) = 0;

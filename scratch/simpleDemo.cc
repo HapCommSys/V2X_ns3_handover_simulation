@@ -58,7 +58,7 @@ static ns3::GlobalValue g_reducedPmValues ("reducedPmValues", "If true, use a su
 
 static ns3::GlobalValue
     g_hoSinrDifference ("hoSinrDifference",
-                        "The value for which an handover between MmWave eNB is triggered",
+                        "The value for which an oggginghandover between MmWave eNB is triggered",
                         ns3::DoubleValue (3), ns3::MakeDoubleChecker<double> ());
 
 static ns3::GlobalValue
@@ -66,8 +66,8 @@ static ns3::GlobalValue
                              "E2 Indication Periodicity reports (value in seconds)",
                              ns3::DoubleValue (0.1), ns3::MakeDoubleChecker<double> (0.01, 2.0));
 
-static ns3::GlobalValue g_simTime ("simTime", "Simulation time in seconds", ns3::DoubleValue (2),
-                                   ns3::MakeDoubleChecker<double> (0.1, 100.0));
+// static ns3::GlobalValue g_simTime ("simTime", "Simulation time in seconds", ns3::DoubleValue (2),
+//                                    ns3::MakeDoubleChecker<double> (0.1, 100.0));
 
 static ns3::GlobalValue g_outageThreshold ("outageThreshold",
                                            "SNR threshold for outage events [dB]", // use -1000.0 with NoAuto
@@ -116,13 +116,25 @@ void my_function(NetDeviceContainer lteEnbDevs)
     }
 }
 
+void PrintPosition (NodeContainer nodeCantainer, Time period)
+{
+  for (uint32_t u = 0; u < nodeCantainer.GetN (); ++u)
+  {
+    Ptr<Node> node = nodeCantainer.Get (u);
+    Vector pos = node->GetObject<MobilityModel>()->GetPosition();
+    NS_LOG_UNCOND ("At time = " << Simulator::Now ().ToDouble(Time::S) << ", Node " << u << " position is " << pos);
+  }
+  Simulator::Schedule (period, &PrintPosition, nodeCantainer, period);
+}
+
 int
 main (int argc, char *argv[])
 {
-    std::string traceFile = "/home/yizhou/桌面/SUMODEMO/SimpleDemo/First/traceFile.ns_movements";
+  std::string traceFile = "./traceFile.txt";
   LogComponentEnableAll (LOG_PREFIX_ALL);
-  LogComponentEnable ("MmWaveEnbNetDevice", LOG_LEVEL_DEBUG);
-
+  // LogComponentEnable ("MmWaveEnbNetDevice", LOG_LEVEL_DEBUG);
+  // LogComponentEnable ("KpmIndication", LOG_LEVEL_ALL);
+  LogComponentEnable ("LteEnbNetDevice", LOG_LEVEL_INFO);
   // Command line arguments
   CommandLine cmd (__FILE__);
   cmd.AddValue ("traceFile", "Ns2 movement trace file", traceFile);
@@ -222,9 +234,9 @@ main (int argc, char *argv[])
 
   // set to false to use the 3GPP radiation pattern (proper configuration of the bearing and downtilt angles is needed)
 //   Config::SetDefault ("ns3::ThreeGppAntennaArrayModel::IsotropicElements", BooleanValue (true));
-  Config::SetDefault ("ns3::ThreeGppChannelModel::UpdatePeriod", TimeValue (MilliSeconds (100.0)));
+  Config::SetDefault ("ns3::ThreeGppChannelModel::UpdatePeriod", TimeValue (MilliSeconds (50.0)));
   Config::SetDefault ("ns3::ThreeGppChannelConditionModel::UpdatePeriod",
-                      TimeValue (MilliSeconds (100)));
+                      TimeValue (MilliSeconds (50)));
 
   Config::SetDefault ("ns3::LteRlcAm::ReportBufferStatusTimer", TimeValue (MilliSeconds (10.0)));
   Config::SetDefault ("ns3::LteRlcUmLowLat::ReportBufferStatusTimer",
@@ -242,12 +254,12 @@ main (int argc, char *argv[])
   // // Carrier bandwidth in Hz
   // double bandwidth = 400e6;         //20e6;400e6
   // // Center frequency in Hz
-  // double centerFrequency = 3.5e9;    //3.5e9;28e9
+  double centerFrequency = 28e9;    //3.5e9;28e9
 
   // Number of antennas in each UE
-  int numAntennasMcUe = 1;  //4
+  int numAntennasMcUe = 4;  //4
   // Number of antennas in each mmWave BS
-  int numAntennasMmWave = 1; //16
+  int numAntennasMmWave = 256; //16
 
   Ptr<MmWaveHelper> mmwaveHelper = CreateObject<MmWaveHelper> ();
   mmwaveHelper->SetPathlossModelType ("ns3::ThreeGppUmaPropagationLossModel");
@@ -259,36 +271,65 @@ main (int argc, char *argv[])
   mmwaveHelper->SetEnbPhasedArrayModelAttribute("NumColumns",UintegerValue(std::sqrt(numAntennasMmWave)));
   mmwaveHelper->SetEnbPhasedArrayModelAttribute("NumRows", UintegerValue(std::sqrt(numAntennasMmWave)));
   // Config::SetDefault ("ns3::MmWavePhyMacCommon::Bandwidth", DoubleValue (bandwidth));
-  // Config::SetDefault ("ns3::MmWavePhyMacCommon::CenterFreq", DoubleValue (centerFrequency));
-  // Config::SetDefault ("ns3::MmWavePhyMacCommon::Numerology", EnumValue (numerology));
-
-  // LogComponentEnable ("Ns2MobilityHelper",LOG_LEVEL_DEBUG);
-  // Create Ns2MobilityHelper with the specified trace log file as parameter
-  Ns2MobilityHelper uemobility = Ns2MobilityHelper (traceFile);
-  uint32_t ues = 2;
-  int nUeNodes = ues; //* nMmWaveEnbNodes;
-  // create LTE, mmWave eNB nodes and UE node
-  NodeContainer ueNodes;  
-  ueNodes.Create (nUeNodes);
+  Config::SetDefault ("ns3::MmWavePhyMacCommon::CenterFreq", DoubleValue (centerFrequency));
+ 
   Ptr<MmWavePointToPointEpcHelper> epcHelper = CreateObject<MmWavePointToPointEpcHelper> ();
   mmwaveHelper->SetEpcHelper (epcHelper);
-  
-  uemobility.Install();
-  for (int i = 0; i < nUeNodes; i++)
-  {
-    NS_LOG_UNCOND ("Node " << i << " MM is " << ueNodes.Get(i)->GetObject<MobilityModel> ());
+
+  std::fstream trace;
+  trace.open (traceFile, std::ios::in);
+  if (!trace){
+    std::cerr << "Unable to open file!" << std::endl;
+    return 1;
   }
-
-  uint16_t length = 4000;
+  std::string line;
+  int nUeNodes = 0;
+  // auto isSpace = [](u_char c) {return std::isspace(c);};
+  while (std::getline(trace, line)) if (line.empty()) ++nUeNodes;
+  
+  // trace.close();
+  NodeContainer ueNodes;
+  ueNodes.Create (nUeNodes);
+  MobilityHelper uemobility;
+  uemobility.SetMobilityModel ("ns3::WaypointMobilityModel");
+  uemobility.Install (ueNodes);
+  // Ptr<WaypointMobilityModel> mob_0 = ueNodes.Get (0)->GetObject<WaypointMobilityModel>();
+  // Ptr<WaypointMobilityModel> mob_1 = ueNodes.Get (1)->GetObject<WaypointMobilityModel>();
+  // mob_0->AddWaypoint (Waypoint (Seconds (0.00), Vector (5.10, -6.00, 0.00)));
+  // mob_0->AddWaypoint (Waypoint (Seconds (0.01), Vector (5.18, -2.00, 0.00)));
+  // mob_0->AddWaypoint (Waypoint (Seconds (3.00), Vector (152.44, -2.00, 0.00)));
+  // mob_1->AddWaypoint (Waypoint (Seconds (0.00), Vector (0, -15000, 0.00)));
+  // mob_1->AddWaypoint (Waypoint (Seconds (1.22), Vector (0, -15000, 0.00)));
+  // mob_1->AddWaypoint (Waypoint (Seconds (1.23), Vector (51.98, -2.00, 0.00)));
+  // mob_1->AddWaypoint (Waypoint (Seconds (4.00), Vector (113.13, -2.00, 0.00)));
+  nUeNodes = -1;
+  trace.clear();              
+  trace.seekg(0, std::ios::beg);
+  double simTime = 0.0;
+  while (std::getline(trace, line)){
+    if (line.empty()) {
+      ++nUeNodes;
+      continue;
+    }
+    float time, x, y;
+    std::istringstream iss(line);
+    if (!(iss >> time >> x >> y)){
+      std::cerr << "Warning: Format" << line << std::endl;
+      continue;
+    }
+    else {
+      ueNodes.Get (nUeNodes)->GetObject<WaypointMobilityModel>()->AddWaypoint (Waypoint (Seconds (time), Vector (x, y, 0.00)));
+      if (simTime < time) simTime = time;
+      // NS_LOG_UNCOND ("Time: " << Seconds (time) << " Position: " << Vector (x, y, 0.00));
+    }    
+  }
+  // for (uint32_t u = 0; u < ueNodes.GetN (); ++u){
+  //   NS_LOG_UNCOND ("UE_" << u << " Position: " << ueNodes.Get(u)->GetObject<MobilityModel>()->GetPosition());
+  // }
+  uint16_t length = 2500;
   uint8_t diff = 250;
-  uint8_t nMmWaveEnbNodes = length / 500;
+  uint8_t nMmWaveEnbNodes = length / diff /2;
   uint8_t nLteEnbNodes = 1;
-
-  //  NS_LOG_INFO (" Bandwidth " << bandwidth << " centerFrequency " << double (centerFrequency)
-                            //  << " isd " << isd 
-                            //  << " numAntennasMcUe " << numAntennasMcUe
-                            //  << " numAntennasMmWave " << numAntennasMmWave << " nMmWaveEnbNodes "
-                            //  << unsigned (nMmWaveEnbNodes));
 
   // Get SGW/PGW and create a single RemoteHost
   Ptr<Node> pgw = epcHelper->GetPgwNode ();
@@ -314,8 +355,6 @@ main (int argc, char *argv[])
       ipv4RoutingHelper.GetStaticRouting (remoteHost->GetObject<Ipv4> ());
   remoteHostStaticRouting->AddNetworkRouteTo (Ipv4Address ("7.0.0.0"), Ipv4Mask ("255.0.0.0"), 1);
 
-
-  
   // Position
   NodeContainer mmWaveEnbNodes;
   NodeContainer lteEnbNodes;
@@ -328,15 +367,11 @@ main (int argc, char *argv[])
   uint8_t y_center = 0;
     // Install Mobility Model
   Ptr<ListPositionAllocator> enbPositionAlloc = CreateObject<ListPositionAllocator> ();
-  enbPositionAlloc->Add (Vector (length / 2 -diff, y_center + 12, 35));
-  enbPositionAlloc->Add (Vector (0 * 500 + diff, y_center - 12, 25));
-  enbPositionAlloc->Add (Vector (1 * 500 + diff, y_center + 12, 25));
-  enbPositionAlloc->Add (Vector (2 * 500 + diff, y_center - 12, 25));
-  enbPositionAlloc->Add (Vector (3 * 500 + diff, y_center + 12, 25));
-  enbPositionAlloc->Add (Vector (4 * 500 + diff, y_center - 12, 25));
-  enbPositionAlloc->Add (Vector (5 * 500 + diff, y_center + 12, 25));
-  enbPositionAlloc->Add (Vector (6 * 500 + diff, y_center - 12, 25));
-  enbPositionAlloc->Add (Vector (7 * 500 + diff, y_center + 12, 25));
+  enbPositionAlloc->Add (Vector (length / 2, y_center - 12, 35));
+  for (uint32_t u = 0; u  < mmWaveEnbNodes.GetN(); ++u)
+    {
+      enbPositionAlloc->Add (Vector (u * 500 + diff, y_center + std::pow (-1, u) * 12, 25));
+    }
   MobilityHelper enbmobility;
   enbmobility.SetMobilityModel ("ns3::ConstantPositionMobilityModel");
   enbmobility.SetPositionAllocator (enbPositionAlloc);
@@ -394,8 +429,8 @@ main (int argc, char *argv[])
     }
 
   // Start applications
-  GlobalValue::GetValueByName ("simTime", doubleValue);
-  double simTime = doubleValue.Get ();
+  // GlobalValue::GetValueByName ("simTime", doubleValue);
+  // double simTime = doubleValue.Get ();
   sinkApp.Start (Seconds (0));
 
   clientApp.Start (MilliSeconds (100));
@@ -410,7 +445,7 @@ main (int argc, char *argv[])
     {
       NS_LOG_UNCOND ("Simulation time is " << simTime << " seconds ");
     //   Simulator::Schedule (MilliSeconds (900), &my_function, lteEnbDevs);
-
+      // Simulator::Schedule (MilliSeconds (500), &PrintPosition, ueNodes, MilliSeconds (50));
       Simulator::Stop (Seconds (simTime));
       NS_LOG_INFO ("Run Simulation.");
       Simulator::Run ();

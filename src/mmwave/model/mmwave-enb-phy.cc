@@ -714,7 +714,7 @@ MmWaveEnbPhy::UpdateUeSinrEstimate()
     {
         SpectrumValue interference = *totalReceivedPsd - *(ue->second);
         NS_LOG_LOGIC("interference " << interference);
-        SpectrumValue sinr = *(ue->second) / (*noisePsd); // + interference);
+        SpectrumValue sinr = *(ue->second) / *noisePsd;// (*noisePsd + interference);
         // we consider the SNR only!
         NS_LOG_LOGIC("sinr " << sinr);
         double sinrAvg = Sum(sinr) / (sinr.GetSpectrumModel()->GetNumBands());

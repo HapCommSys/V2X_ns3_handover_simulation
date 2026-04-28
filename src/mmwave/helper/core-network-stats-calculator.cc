@@ -88,6 +88,8 @@ CoreNetworkStatsCalculator::LogX2Packet(std::string path,
     if (!m_x2OutFile.is_open())
     {
         m_x2OutFile.open(GetX2OutputFilename().c_str());
+        m_x2OutFile << "time" << " " << "sourceCellId" << " "
+                << "targetCellId" << " " << "size" << " " << "delay" << " " << "data" << std::endl;
     }
 
     m_x2OutFile << Simulator::Now().GetNanoSeconds() / 1.0e9 << " " << sourceCellId << " "

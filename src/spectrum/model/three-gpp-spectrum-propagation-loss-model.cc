@@ -331,6 +331,7 @@ ThreeGppSpectrumPropagationLossModel::DoCalcRxPowerSpectralDensity(
     NS_LOG_FUNCTION(this);
     uint32_t aId = a->GetObject<Node>()->GetId(); // id of the node a
     uint32_t bId = b->GetObject<Node>()->GetId(); // id of the node b
+    // NS_LOG_UNCOND ("a_Id: " << aId << " Position: " << a->GetPosition() << "\nb_Id: " << bId << " Position: " << b->GetPosition ());
 
     NS_ASSERT(aId != bId);
     NS_ASSERT_MSG(a->GetDistanceFrom(b) > 0.0,

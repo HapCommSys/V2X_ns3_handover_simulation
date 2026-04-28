@@ -231,7 +231,7 @@ void
 MmWaveSvdBeamforming::SetBeamformingVectorForDevice(Ptr<NetDevice> otherDevice,
                                                     Ptr<PhasedArrayModel> otherAntenna)
 {
-    NS_LOG_FUNCTION(this << otherDevice << otherAntenna);
+    // NS_LOG_UNCOND (this << otherDevice << " " << otherAntenna);
 
     Ptr<MobilityModel> thisMob = m_device->GetNode()->GetObject<MobilityModel>();
     NS_ASSERT_MSG(thisMob, "This device " << m_device << " does not have a mobility model");
@@ -240,7 +240,8 @@ MmWaveSvdBeamforming::SetBeamformingVectorForDevice(Ptr<NetDevice> otherDevice,
 
     // this will trigger a new computation (if needed)
     auto channelMatrix = m_channel->GetChannel(thisMob, otherMob, m_antenna, otherAntenna);
-
+    // NS_LOG_UNCOND (m_antenna->GetNumberOfElements() << " " << otherAntenna->GetNumberOfElements());
+    // NS_LOG_UNCOND ("The channel matrix is " << channelMatrix << " Row: " << channelMatrix->m_channel.GetNumRows() << " Column: " << channelMatrix->m_channel.GetNumCols() << " Spatrial: " << channelMatrix->m_channel.GetNumPages());
     std::pair<PhasedArrayModel::ComplexVector, PhasedArrayModel::ComplexVector> bfVectors;
 
     bool toCache{false};

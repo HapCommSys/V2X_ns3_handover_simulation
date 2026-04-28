@@ -222,6 +222,7 @@ ThreeGppPropagationLossModel::GetLoss(Ptr<ChannelCondition> cond,
     {
         NS_FATAL_ERROR("Unknown channel condition");
     }
+    // loss = GetLossLos(distance2d, distance3d, hUt, hBs);    
 
     return loss;
 }
