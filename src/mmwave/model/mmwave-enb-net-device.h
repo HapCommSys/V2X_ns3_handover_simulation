@@ -49,6 +49,9 @@
 #include <map>
 #include <vector>
 
+
+std::vector<char> serialize_map(const std::map<std::string, std::string>& myMap);
+
 namespace ns3
 {
 /* Add forward declarations here */
@@ -56,9 +59,12 @@ class Packet;
 class PacketBurst;
 class Node;
 class LteEnbComponentCarrierManager;
+extern std::map <uint64_t, double> imsiRunningTime;
+extern std::map <uint64_t, double> imsiArrivalTime;
 
 namespace mmwave
 {
+
 // class MmWavePhy;
 class MmWaveEnbPhy;
 class MmWaveEnbMac;
@@ -218,8 +224,16 @@ class MmWaveEnbNetDevice : public MmWaveNetDevice
                                                       std::string gnbId,
                                                       uint16_t nrCellId);
     Ptr<KpmIndicationMessage> BuildRicIndicationMessageCuUp(std::string plmId);
+    std::map <std::string, std::string> 
+    BuildRicIndicationMessageCuUp(std::string plmId, bool flag);
+
     Ptr<KpmIndicationMessage> BuildRicIndicationMessageCuCp(std::string plmId);
+    std::map <std::string, std::string> 
+    BuildRicIndicationMessageCuCp(std::string plmId, bool flag);
+    
     Ptr<KpmIndicationMessage> BuildRicIndicationMessageDu(std::string plmId, uint16_t nrCellId);
+    std::map <std::string, std::string> 
+    BuildRicIndicationMessageDu(std::string plmId, uint16_t nrCellId, bool flag);
 
     /**
      * @brief Save at each granularity period of 10 ms the number of UEs connected to the cell

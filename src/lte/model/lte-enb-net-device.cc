@@ -93,11 +93,11 @@ NS_OBJECT_ENSURE_REGISTERED(LteEnbNetDevice);
 void
 LteEnbNetDevice::KpmSubscriptionCallback(E2AP_PDU_t* sub_req_pdu)
 {
-    NS_LOG_DEBUG("Received RIC Subscription Request, cellId = " << m_cellId);
+    NS_LOG_UNCOND("Received RIC Subscription Request, cellId = " << m_cellId);
 
     E2Termination::RicSubscriptionRequest_rval_s params =
         m_e2term->ProcessRicSubscriptionRequest(sub_req_pdu);
-    NS_LOG_DEBUG("requestorId " << +params.requestorId << ", instanceId " << +params.instanceId
+    NS_LOG_UNCOND("requestorId " << +params.requestorId << ", instanceId " << +params.instanceId
                                 << ", ranFuncionId " << +params.ranFuncionId << ", actionId "
                                 << +params.actionId);
 
@@ -436,21 +436,36 @@ LteEnbNetDevice::ControlMessageReceivedCallback(E2AP_PDU_t* sub_req_pdu)
     NS_LOG_DEBUG("LteEnbNetDevice::ControlMessageReceivedCallback: Received RIC Control Message");
 
     Ptr<RicControlMessage> controlMessage = Create<RicControlMessage>(sub_req_pdu);
+      NS_LOG_DEBUG ("controlMessage: " << controlMessage <<
+                "\n RANfunctionID: " << controlMessage->m_ranFunctionId <<
+                // "\nRICrequestID: " << controlMessage->m_ricRequestId <<
+                // "\nRICcallProcessID: " << controlMessage->m_ricCallProcessId <<
+                "\n" << controlMessage->GetSecondaryCellIdHO());
     NS_LOG_INFO("After RicControlMessage::RicControlMessage constructor");
     NS_LOG_INFO("Request type " << controlMessage->m_requestType);
     switch (controlMessage->m_requestType)
     {
     case RicControlMessage::ControlMessageRequestIdType::TS: {
-        NS_LOG_INFO("TS, do the handover");
+        NS_LOG_UNCOND("TS, do the handover");
         // do handover
+        NS_LOG_DEBUG ("controlMessage->m_e2SmRcControlHeaderFormat1: " << controlMessage->m_e2SmRcControlHeaderFormat1 << 
+                  "\ncontrolMessage->m_e2SmRcControlHeaderFormat1->ueId.buf: " << controlMessage->m_e2SmRcControlHeaderFormat1->ueId.buf << 
+                  "\ncontrolMessage->m_e2SmRcControlHeaderFormat1->ueId.size: " << controlMessage->m_e2SmRcControlHeaderFormat1->ueId.size);
+    
         Ptr<OctetString> imsiString =
             Create<OctetString>((void*)controlMessage->m_e2SmRcControlHeaderFormat1->ueId.buf,
                                 controlMessage->m_e2SmRcControlHeaderFormat1->ueId.size);
         char* end;
 
         uint64_t imsi = std::strtoull(imsiString->DecodeContent().c_str(), &end, 10);
-        uint16_t targetCellId = std::stoi(controlMessage->GetSecondaryCellIdHO());
         NS_LOG_INFO("Imsi Decoded: " << imsi);
+        auto sc = controlMessage->GetSecondaryCellIdHO();
+        NS_LOG_UNCOND("SecondaryCellIdHO = [" << sc << "], len=" << sc.size());
+        for (unsigned char c : sc) {
+        NS_LOG_INFO("  byte=" << (int)c);
+        }
+        uint16_t targetCellId = std::stoi(sc);
+        // uint16_t targetCellId = std::stoi(controlMessage->GetSecondaryCellIdHO());
         NS_LOG_INFO("Target Cell id " << targetCellId);
         m_rrc->TakeUeHoControl(imsi);
         if (!m_forceE2FileLogging)
@@ -1282,7 +1297,8 @@ LteEnbNetDevice::BuildRicIndicationMessageCuUp(std::string plmId)
             NS_FATAL_ERROR("Can't open file " << m_cuUpFileName.c_str());
         }
 
-        uint64_t timestamp = m_startTime + Simulator::Now().GetMilliSeconds();
+        // uint64_t timestamp = m_startTime + Simulator::Now().GetMilliSeconds();
+        float timestamp = Simulator::Now().GetSeconds();
 
         // the string is timestamp,ueImsiComplete,DRB.PdcpSduDelayDl(cellAverageLatency),
         // m_pDCPBytesUL(0),m_pDCPBytesDL(cellDlTxVolume),DRB.PdcpSduVolumeDl_Filter.UEID
@@ -1389,7 +1405,8 @@ LteEnbNetDevice::BuildRicIndicationMessageCuCp(std::string plmId)
         // the string is timestamp, ueImsiComplete, numActiveUes, RRC.ConnMean,
         // DRB.EstabSucc.5QI.UEID (numDrb), DRB.RelActNbr.5QI.UEID (0)
 
-        uint64_t timestamp = m_startTime + Simulator::Now().GetMilliSeconds();
+        // uint64_t timestamp = m_startTime + Simulator::Now().GetMilliSeconds();
+        float timestamp = Simulator::Now().GetSeconds();
 
         for (auto ue : ueMap)
         {

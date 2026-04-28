@@ -61,14 +61,40 @@
 
 #include <numeric>
 
+
+std::vector<char> serialize_map(const std::map<std::string, std::string>& myMap) {
+    std::vector<char> buffer;
+
+    uint32_t size = htonl(myMap.size());
+    buffer.insert(buffer.end(), reinterpret_cast<char*>(&size), reinterpret_cast<char*>(&size) + sizeof(uint32_t));
+    
+    for (const auto& [key, value] : myMap) {
+        uint32_t keyLen = htonl(key.size());
+        buffer.insert(buffer.end(), reinterpret_cast<char*>(&keyLen), reinterpret_cast<char*>(&keyLen) + sizeof(uint32_t));
+        
+        buffer.insert(buffer.end(), key.begin(), key.end());
+        
+        uint32_t valLen = htonl(value.size());
+        buffer.insert(buffer.end(), reinterpret_cast<char*>(&valLen), reinterpret_cast<char*>(&valLen) + sizeof(uint32_t));
+        
+        buffer.insert(buffer.end(), value.begin(), value.end());
+    }
+    
+    return buffer;
+}
+
+
+
 namespace ns3
 {
 
 NS_LOG_COMPONENT_DEFINE("MmWaveEnbNetDevice");
+std::map <uint64_t, double> imsiRunningTime;
+std::map <uint64_t, double> imsiArrivalTime;
 
 namespace mmwave
 {
-
+    
 NS_OBJECT_ENSURE_REGISTERED(MmWaveEnbNetDevice);
 
 /**
@@ -81,11 +107,11 @@ NS_OBJECT_ENSURE_REGISTERED(MmWaveEnbNetDevice);
 void
 MmWaveEnbNetDevice::KpmSubscriptionCallback(E2AP_PDU_t* sub_req_pdu)
 {
-    NS_LOG_DEBUG("\nReceived RIC Subscription Request, cellId= " << m_cellId << "\n");
+    NS_LOG_UNCOND("\nAt " << Simulator::Now().GetSeconds() << " Received RIC Subscription Request, cellId= " << m_cellId);
 
     E2Termination::RicSubscriptionRequest_rval_s params =
         m_e2term->ProcessRicSubscriptionRequest(sub_req_pdu);
-    NS_LOG_DEBUG("requestorId " << +params.requestorId << ", instanceId " << +params.instanceId
+    NS_LOG_UNCOND("requestorId " << +params.requestorId << ", instanceId " << +params.instanceId
                                 << ", ranFuncionId " << +params.ranFuncionId << ", actionId "
                                 << +params.actionId);
 
@@ -258,12 +284,12 @@ TypeId MmWaveEnbNetDevice::GetTypeId ()
                           MakePointerChecker<MmWavePhyTrace>())
             .AddAttribute("EnableCuUpReport",
                           "If true, send CuUpReport",
-                          BooleanValue(false),
+                          BooleanValue(true),
                           MakeBooleanAccessor(&MmWaveEnbNetDevice::m_sendCuUp),
                           MakeBooleanChecker())
             .AddAttribute("EnableCuCpReport",
                           "If true, send CuCpReport",
-                          BooleanValue(false),
+                          BooleanValue(true),
                           MakeBooleanAccessor(&MmWaveEnbNetDevice::m_sendCuCp),
                           MakeBooleanChecker())
             .AddAttribute("EnableDuReport",
@@ -502,14 +528,8 @@ MmWaveEnbNetDevice::UpdateConfig(void)
             {
                 NS_LOG_DEBUG("E2sim start in cell " << m_cellId << " force CSV logging "
                                                     << m_forceE2FileLogging);
-
-                if (!m_forceE2FileLogging)
-                {
-                    Simulator::Schedule(MicroSeconds(0), &E2Termination::Start, m_e2term);
-                }
-                else
-                {
-                    m_cuUpFileName = "cu-up-cell-" + std::to_string(m_cellId) + ".txt";
+                
+                                                    m_cuUpFileName = "cu-up-cell-" + std::to_string(m_cellId) + ".txt";
                     std::ofstream csv{};
                     csv.open(m_cuUpFileName.c_str());
                     csv << "timestamp,ueImsiComplete,DRB.PdcpSduDelayDl(cellAverageLatency),"
@@ -586,10 +606,22 @@ MmWaveEnbNetDevice::UpdateConfig(void)
 
                     csv << header_csv + "," + cell_header + "," + ue_header + "\n";
                     csv.close();
-                    Simulator::Schedule(MicroSeconds(800),
+                if (!m_forceE2FileLogging)
+                {
+                    Simulator::Schedule(MicroSeconds(0), &E2Termination::Start, m_e2term);
+                }
+                else
+                {
+                    
+                    // Simulator::Schedule(MicroSeconds(800),
+                    //                     &MmWaveEnbNetDevice::BuildAndSendReportMessage,
+                    //                     this,
+                    //                     E2Termination::RicSubscriptionRequest_rval_s{});
+                    Simulator::Schedule(MicroSeconds(0),
                                         &MmWaveEnbNetDevice::BuildAndSendReportMessage,
                                         this,
                                         E2Termination::RicSubscriptionRequest_rval_s{});
+                    
                 }
 
                 // Regardless the offline or online mode for reporting the files, we always want to
@@ -706,12 +738,19 @@ MmWaveEnbNetDevice::BuildRicIndicationMessageCuUp(std::string plmId)
     double perUserAverageLatencySum = 0;
 
     std::unordered_map<uint64_t, std::string> uePmString{};
+    float timestamp = Simulator::Now().GetSeconds();
 
     for (auto ue : ueMap)
-    {
+    {   
         uint64_t imsi = ue.second->GetImsi();
         std::string ueImsiComplete = GetImsiString(imsi);
-
+        if ((m_rrc->m_handoverMode == LteEnbRrc::THRESHOLD_SEAMLESS || m_rrc->m_handoverMode == LteEnbRrc::FIXED_TTT_SEAMLESS || m_rrc->m_handoverMode == LteEnbRrc::DYNAMIC_TTT_SEAMLESS || m_rrc->m_handoverMode == LteEnbRrc::GREEDY  || m_rrc->m_handoverMode == LteEnbRrc::NO_AUTOMATIC_HANDOVER)
+            && (timestamp >= imsiRunningTime.find(imsi)->second || timestamp < imsiArrivalTime.find(imsi)->second)){
+                continue;
+            }
+        // NS_LOG_UNCOND("At time" << timestamp << " for cell " << m_cellId << " processing UE "
+        //                 << std::to_string(imsi) << " ," << (timestamp >= imsiRunningTime.find(imsi)->second) << " ," << (timestamp < imsiArrivalTime.find(imsi)->second));
+        
         // double rxDlPackets = m_e2PdcpStatsCalculator->GetDlRxPackets(imsi, 3); // LCID 3 is used
         // for data
         uint64_t txDlPackets =
@@ -725,7 +764,7 @@ MmWaveEnbNetDevice::BuildRicIndicationMessageCuUp(std::string plmId)
 
         uint64_t txPdcpPduNrRlc = 0;
         uint64_t txPdcpPduBytesNrRlc = 0;
-
+    
 
         auto rlcMap = ue.second->GetRlcMap(); // secondary-connected RLCs
         NS_LOG_INFO("About to get into the RLC map for ue " << std::to_string(imsi) << " size " << rlcMap.size());
@@ -790,8 +829,198 @@ MmWaveEnbNetDevice::BuildRicIndicationMessageCuUp(std::string plmId)
             // }
         }
 
+        NS_LOG_DEBUG("ue id " << std::to_string(imsi) << " final txPdcpPduBytesNrRlc after *= 8 / 1e3: " << std::to_string(txPdcpPduBytesNrRlc));
+        // double pdcpLatency = m_e2PdcpStatsCalculator->GetDlDelay(imsi, 3) / 1e5; // unit: x 0.1 ms
+        double pdcpLatency = m_e2PdcpStatsCalculator->GetDlDelay(imsi, 3) / 1e6;
+        latencyMap[m_cellId] = pdcpLatency;
+        
+        perUserAverageLatencySum += pdcpLatency;
+
+        double pdcpThroughput = txBytes / m_e2Periodicity;   // unit kbps
+        double pdcpThroughputRx = rxBytes / m_e2Periodicity; // unit kbps
+
+        if (m_drbThrDlPdcpBasedComputationUeid.find(imsi) !=
+            m_drbThrDlPdcpBasedComputationUeid.end())
+        {
+            m_drbThrDlPdcpBasedComputationUeid.at(imsi) += pdcpThroughputRx;
+        }
+        else
+        {
+            m_drbThrDlPdcpBasedComputationUeid[imsi] = pdcpThroughputRx;
+        }
+
+        // compute bitrate based on RLC statistics, decoupled from pdcp throughput
+        double rlcLatencyS = m_e2RlcStatsCalculator->GetDlDelay(imsi, 3);
+        double rlcLatency = rlcLatencyS / 1e9; // unit: s
+        NS_LOG_DEBUG("rlcLatencyS (" << rlcLatencyS << ") rlcLatency (" << rlcLatency << ")");
+
+        double pduSizeBytes = m_e2RlcStatsCalculator->GetDlPduSizeStats(imsi, 3)[0];
+        double pduSize = pduSizeBytes * 8.0 / 1e3; // unit kbit
+        double rlcBitrate = (rlcLatency == 0) ? 0 : pduSize / rlcLatency;     // unit kbit/s
+        
+        NS_LOG_INFO("pduSizeBytes (" << pduSizeBytes << ") pduSize (" << pduSize << ") rlcBitrate (" << rlcBitrate << ")");
+
+        m_drbThrDlUeid[imsi] = rlcBitrate;
+
+        NS_LOG_DEBUG(Simulator::Now().GetSeconds()
+                     << " " << m_cellId << " cell, connected UE with IMSI " << imsi
+                     << " ueImsiString " << ueImsiComplete << " txDlPackets " << txDlPackets
+                     << " txDlPacketsNr " << txPdcpPduNrRlc << " txBytes " << txBytes << " rxBytes "
+                     << rxBytes << " txDlBytesNr " << txPdcpPduBytesNrRlc << " pdcpLatency "
+                     << pdcpLatency << " pdcpThroughput " << pdcpThroughput << " rlcBitrate "
+                     << rlcBitrate);
+
+        m_e2PdcpStatsCalculator->ResetResultsForImsiLcid(imsi, 3);
+
+        if (!indicationMessageHelper->IsOffline())
+        {
+            indicationMessageHelper->AddCuUpUePmItem(ueImsiComplete,
+                                                     txPdcpPduBytesNrRlc,
+                                                     txPdcpPduNrRlc);
+        }
+
+        // TODO enable this back once the reports are fixed
+        uePmString.insert(std::make_pair(imsi,std::to_string(txBytes) + 
+                                         "," + std::to_string(txDlPackets) + "," + std::to_string(pdcpThroughput) + "," + std::to_string(pdcpLatency) + ",,," + std::to_string(txPdcpPduBytesNrRlc) + "," +
+                                             std::to_string(txPdcpPduNrRlc)));
+        // uePmString.insert(std::make_pair(imsi,
+        //                                  ",,,,,,,,,"));
+
+    }
+
+    if (!indicationMessageHelper->IsOffline())
+    {
+        indicationMessageHelper->FillCuUpValues(plmId);
+    }
+
+    NS_LOG_DEBUG(Simulator::Now().GetSeconds()
+                 << " " << m_cellId << " cell volume mmWave " << cellDlTxVolume);
+
+    if (m_forceE2FileLogging)
+    {
+        std::ofstream csv{};
+        csv.open(m_cuUpFileName.c_str(), std::ios_base::app);
+        if (!csv.is_open())
+        {
+            NS_FATAL_ERROR("Can't open file " << m_cuUpFileName.c_str());
+        }
+
+        // uint64_t timestamp = m_startTime + Simulator::Now().GetMilliSeconds();
+        // float timestamp = Simulator::Now().GetSeconds();
+
+        // the string is timestamp, ueImsiComplete, DRB.PdcpSduDelayDl(cellAverageLatency),
+        // m_pDCPBytesUL(0),m_pDCPBytesDL(cellDlTxVolume),DRB.PdcpSduVolumeDl_Filter.UEID
+        // (txBytes),Tot.PdcpSduNbrDl.UEID (txDlPackets),
+        // DRB.PdcpSduBitRateDl.UEID(pdcpThroughput),DRB.PdcpSduDelayDl.UEID(pdcpLatency),
+        // txPdcpPduLteRlc,txPdcpPduBytesLteRlc,
+        // QosFlow.PdcpPduVolumeDL_Filter.UEID (txPdcpPduBytesNrRlc),
+        // DRB.PdcpPduNbrDl.Qos.UEID(txPdcpPduNrRlc)
+
+        for (auto ue : ueMap)
+        {
+            uint64_t imsi = ue.second->GetImsi();
+            std::string ueImsiComplete = GetImsiString(imsi);
+            if ((m_rrc->m_handoverMode == LteEnbRrc::THRESHOLD_SEAMLESS || m_rrc->m_handoverMode == LteEnbRrc::FIXED_TTT_SEAMLESS || m_rrc->m_handoverMode == LteEnbRrc::DYNAMIC_TTT_SEAMLESS || m_rrc->m_handoverMode == LteEnbRrc::GREEDY || m_rrc->m_handoverMode == LteEnbRrc::NO_AUTOMATIC_HANDOVER)
+                && (timestamp >= imsiRunningTime.find(imsi)->second || timestamp < imsiArrivalTime.find(imsi)->second)){
+                    continue;
+                }
+
+            auto uePms = uePmString.find(imsi)->second;
+
+            std::string to_print = std::to_string(timestamp) + "," + ueImsiComplete + "," + "," +
+                                   "," + "," + uePms + "\n";
+
+            csv << to_print;
+        }
+        csv.close();
+        return nullptr;
+    }
+    else
+    {
+        return indicationMessageHelper->CreateIndicationMessage();
+    }
+}
+
+std::map <std::string, std::string> 
+MmWaveEnbNetDevice::BuildRicIndicationMessageCuUp(std::string plmId, bool flag){
+    std::map <std::string, std::string> cuUpReport;
+    auto ueMap = m_rrc->GetUeMap();
+    float timestamp = Simulator::Now().GetSeconds();
+    cuUpReport["type"] = "CuUp";
+    cuUpReport["timestamp"] = std::to_string(timestamp);
+    // cuUpReport["numActiveUes"] = std::to_string(ueMap.size());
+    cuUpReport["cellId"] = std::to_string(m_cellId);
+
+    // // get <rnti, UeManager> map of connected UEs
+    // auto ueMap = m_rrc->GetUeMap();
+    // gNB-wide PDCP volume in downlink
+    double cellDlTxVolume = 0;
+    // rx bytes in downlink
+    double cellDlRxVolume = 0;
+
+    // sum of the per-user average latency
+    double perUserAverageLatencySum = 0;
+
+    std::unordered_map<uint64_t, std::string> uePmString{};
+
+    std::ofstream csv{};
+    csv.open(m_cuUpFileName.c_str(), std::ios_base::app);
+    if (!csv.is_open())
+    {
+        NS_FATAL_ERROR("Can't open file " << m_cuUpFileName.c_str());
+    }
+
+    for (auto ue : ueMap)
+    {
+        uint64_t imsi = ue.second->GetImsi();
+        std::string ueImsiComplete = GetImsiString(imsi);
+        if ((m_rrc->m_handoverMode == LteEnbRrc::THRESHOLD_SEAMLESS || m_rrc->m_handoverMode == LteEnbRrc::FIXED_TTT_SEAMLESS || m_rrc->m_handoverMode == LteEnbRrc::DYNAMIC_TTT_SEAMLESS || m_rrc->m_handoverMode == LteEnbRrc::GREEDY || m_rrc->m_handoverMode == LteEnbRrc::NO_AUTOMATIC_HANDOVER)
+            && (timestamp >= imsiRunningTime.find(imsi)->second || timestamp < imsiArrivalTime.find(imsi)->second)){
+                continue;
+            }
+
+        // double rxDlPackets = m_e2PdcpStatsCalculator->GetDlRxPackets(imsi, 3); // LCID 3 is used
+        // for data
+        uint64_t txDlPackets =
+            m_e2PdcpStatsCalculator->GetDlTxPackets(imsi, 3); // LCID 3 is used for data
+        uint64_t txBytes = std::round (
+            m_e2PdcpStatsCalculator->GetDlTxData(imsi, 3) * 8 / 1e3); // in kbit, not byte
+        uint64_t rxBytes =
+            m_e2PdcpStatsCalculator->GetDlRxData(imsi, 3) * 8 / 1e3; // in kbit, not byte
+        cellDlTxVolume += txBytes;
+        cellDlRxVolume += rxBytes;
+
+        uint64_t txPdcpPduNrRlc = 0;
+        uint64_t txPdcpPduBytesNrRlc = 0;
+    
+
+        auto rlcMap = ue.second->GetRlcMap(); // secondary-connected RLCs
+        NS_LOG_INFO("About to get into the RLC map for ue " << std::to_string(imsi) << " size " << rlcMap.size());
+
+        for (auto drb : rlcMap)
+        {
+            txPdcpPduNrRlc += drb.second->m_rlc->GetTxPacketsInReportingPeriod();
+            txPdcpPduBytesNrRlc += drb.second->m_rlc->GetTxBytesInReportingPeriod();
+            NS_LOG_INFO("ue id " << std::to_string(imsi) << " txPdcpPduNrRlc " << std::to_string(txPdcpPduNrRlc));
+            NS_LOG_INFO("ue id " << std::to_string(imsi) << " txPdcpPduBytesNrRlc " << std::to_string(txPdcpPduBytesNrRlc));
+            drb.second->m_rlc->ResetRlcCounters();
+        }
+        txPdcpPduBytesNrRlc = std::round (txPdcpPduBytesNrRlc * 8 / 1e3); // in kbit, not byte
+
+        NS_LOG_INFO("txDlPackets (" << txDlPackets << ") vs txPdcpPduNrRlc (" << txPdcpPduNrRlc
+                                    << ") and txBytes (" << txBytes << ") vs txPdcpPduBytesNrRlc ("
+                                    << txPdcpPduBytesNrRlc << ")\n");
+
+        if (txDlPackets < txPdcpPduNrRlc)
+        {
+        
+            NS_LOG_WARN("ue id " << std::to_string(imsi) << " txDlPackets (" << txDlPackets
+                                      << ") < txPdcpPduNrRlc (" << txPdcpPduNrRlc
+                                      << ") on mmWaveCell");
+        }
+
         NS_LOG_INFO("ue id " << std::to_string(imsi) << " final txPdcpPduBytesNrRlc after *= 8 / 1e3: " << std::to_string(txPdcpPduBytesNrRlc));
-        double pdcpLatency = m_e2PdcpStatsCalculator->GetDlDelay(imsi, 3) / 1e5; // unit: x 0.1 ms
+        double pdcpLatency = m_e2PdcpStatsCalculator->GetDlDelay(imsi, 3) / 1e6; // unit: x 1 ms
         perUserAverageLatencySum += pdcpLatency;
 
         double pdcpThroughput = txBytes / m_e2Periodicity;   // unit kbps
@@ -830,39 +1059,30 @@ MmWaveEnbNetDevice::BuildRicIndicationMessageCuUp(std::string plmId)
 
         m_e2PdcpStatsCalculator->ResetResultsForImsiLcid(imsi, 3);
 
-        if (!indicationMessageHelper->IsOffline())
-        {
-            indicationMessageHelper->AddCuUpUePmItem(ueImsiComplete,
-                                                     txPdcpPduBytesNrRlc,
-                                                     txPdcpPduNrRlc);
-        }
-
+        // the string is timestamp, ueImsiComplete, DRB.PdcpSduDelayDl(cellAverageLatency),
+        // m_pDCPBytesUL(0),m_pDCPBytesDL(cellDlTxVolume),DRB.PdcpSduVolumeDl_Filter.UEID
+        // (txBytes),Tot.PdcpSduNbrDl.UEID (txDlPackets),
+        // DRB.PdcpSduBitRateDl.UEID(pdcpThroughput),DRB.PdcpSduDelayDl.UEID(pdcpLatency),
+        // txPdcpPduLteRlc,txPdcpPduBytesLteRlc,
+        // QosFlow.PdcpPduVolumeDL_Filter.UEID (txPdcpPduBytesNrRlc),
+        // DRB.PdcpPduNbrDl.Qos.UEID(txPdcpPduNrRlc)
         // TODO enable this back once the reports are fixed
-        // uePmString.insert(std::make_pair(imsi,
-        //                                  ",,,,,," + std::to_string(txPdcpPduBytesNrRlc) + "," +
-        //                                      std::to_string(txPdcpPduNrRlc)));
-        uePmString.insert(std::make_pair(imsi,
-                                         ",,,,,,,,,"));
-    }
+        // cuUpReport["txBytes" + std::to_string(imsi)] = std::to_string(txBytes);
+        // cuUpReport["txDlPackets" + std::to_string(imsi)] = std::to_string(txDlPackets);
+        // cuUpReport["pdcpThroughput" + std::to_string(imsi)] = std::to_string(pdcpThroughput);
 
-    if (!indicationMessageHelper->IsOffline())
-    {
-        indicationMessageHelper->FillCuUpValues(plmId);
-    }
+        // cuUpReport["pdcpLatency" + std::to_string(imsi)] = std::to_string(pdcpLatency);
+        cuUpReport["pdcpLatency"] = std::to_string(pdcpLatency);
+        
+        // cuUpReport["txPdcpPduBytesNrRlc" + std::to_string(imsi)] = std::to_string(txPdcpPduBytesNrRlc);
+        // cuUpReport["txPdcpPduNrRlc" + std::to_string(imsi)] = std::to_string(txPdcpPduNrRlc);
+        uePmString.insert(std::make_pair(imsi,std::to_string(txBytes) + 
+                                         "," + std::to_string(txDlPackets) + "," + std::to_string(pdcpThroughput) + "," + std::to_string(pdcpLatency) + ",,," + std::to_string(txPdcpPduBytesNrRlc) + "," +
+                                             std::to_string(txPdcpPduNrRlc)));
 
-    NS_LOG_DEBUG(Simulator::Now().GetSeconds()
-                 << " " << m_cellId << " cell volume mmWave " << cellDlTxVolume);
 
-    if (m_forceE2FileLogging)
-    {
-        std::ofstream csv{};
-        csv.open(m_cuUpFileName.c_str(), std::ios_base::app);
-        if (!csv.is_open())
-        {
-            NS_FATAL_ERROR("Can't open file " << m_cuUpFileName.c_str());
-        }
 
-        uint64_t timestamp = m_startTime + Simulator::Now().GetMilliSeconds();
+        // uint64_t timestamp = m_startTime + Simulator::Now().GetMilliSeconds();
 
         // the string is timestamp, ueImsiComplete, DRB.PdcpSduDelayDl(cellAverageLatency),
         // m_pDCPBytesUL(0),m_pDCPBytesDL(cellDlTxVolume),DRB.PdcpSduVolumeDl_Filter.UEID
@@ -871,26 +1091,15 @@ MmWaveEnbNetDevice::BuildRicIndicationMessageCuUp(std::string plmId)
         // txPdcpPduLteRlc,txPdcpPduBytesLteRlc,
         // QosFlow.PdcpPduVolumeDL_Filter.UEID (txPdcpPduBytesNrRlc),
         // DRB.PdcpPduNbrDl.Qos.UEID(txPdcpPduNrRlc)
+        auto uePms = uePmString.find(imsi)->second;
 
-        for (auto ue : ueMap)
-        {
-            uint64_t imsi = ue.second->GetImsi();
-            std::string ueImsiComplete = GetImsiString(imsi);
+        std::string to_print = std::to_string(timestamp) + "," + ueImsiComplete + "," + "," +
+                                "," + "," + uePms + "\n";
 
-            auto uePms = uePmString.find(imsi)->second;
-
-            std::string to_print = std::to_string(timestamp) + "," + ueImsiComplete + "," + "," +
-                                   "," + "," + uePms + "\n";
-
-            csv << to_print;
-        }
-        csv.close();
-        return nullptr;
+        csv << to_print;
     }
-    else
-    {
-        return indicationMessageHelper->CreateIndicationMessage();
-    }
+    csv.close();
+    return cuUpReport;
 }
 
 template <typename A, typename B>
@@ -947,11 +1156,17 @@ MmWaveEnbNetDevice::BuildRicIndicationMessageCuCp(std::string plmId)
     long meanRrcUes = ComputeMeanUes();
 
     std::unordered_map<uint64_t, std::string> uePmString{};
+    float timestamp = Simulator::Now().GetSeconds();
+
 
     for (auto ue : ueMap)
     {
         uint64_t imsi = ue.second->GetImsi();
         std::string ueImsiComplete = GetImsiString(imsi);
+        if ((m_rrc->m_handoverMode == LteEnbRrc::THRESHOLD_SEAMLESS || m_rrc->m_handoverMode == LteEnbRrc::FIXED_TTT_SEAMLESS || m_rrc->m_handoverMode == LteEnbRrc::DYNAMIC_TTT_SEAMLESS || m_rrc->m_handoverMode == LteEnbRrc::GREEDY || m_rrc->m_handoverMode == LteEnbRrc::NO_AUTOMATIC_HANDOVER)
+            && (timestamp >= imsiRunningTime.find(imsi)->second || timestamp < imsiArrivalTime.find(imsi)->second)){
+                continue;
+            }
 
         // This shall be created in connected mode and sent through the E2 Interface
         // Since now they are now integrated in the asn1 definiton and they are leaking
@@ -980,9 +1195,9 @@ MmWaveEnbNetDevice::BuildRicIndicationMessageCuCp(std::string plmId)
                                                                     m_cellId,
                                                                     convertedSinr);
         }
-        // NS_LOG_DEBUG(Simulator::Now().GetSeconds()
-        //              << " enbdev " << m_cellId << " UE " << imsi << " L3 serving SINR "
-        //              << sinrThisCell << " L3 serving SINR 3gpp " << convertedSinr);
+        NS_LOG_DEBUG(Simulator::Now().GetSeconds()
+                     << " enbdev " << m_cellId << " UE " << imsi << " L3 serving SINR "
+                     << sinrThisCell << " L3 serving SINR 3gpp " << convertedSinr);
 
         std::string servingStr = std::to_string(numDrb) + "," + std::to_string(0) + "," +
                                  std::to_string(m_cellId) + "," + std::to_string(imsi) + "," +
@@ -1074,12 +1289,17 @@ MmWaveEnbNetDevice::BuildRicIndicationMessageCuCp(std::string plmId)
         // neigh SINR 3gpp (convertedSinr) The values for L3 neighbour cells are repeated for each
         // neighbour (7 times in this implementation)
 
-        uint64_t timestamp = m_startTime + Simulator::Now().GetMilliSeconds();
+        // uint64_t timestamp = m_startTime + Simulator::Now().GetMilliSeconds();
+        // float timestamp = Simulator::Now().GetSeconds();
 
         for (auto ue : ueMap)
         {
             uint64_t imsi = ue.second->GetImsi();
             std::string ueImsiComplete = GetImsiString(imsi);
+            if ((m_rrc->m_handoverMode == LteEnbRrc::THRESHOLD_SEAMLESS || m_rrc->m_handoverMode == LteEnbRrc::FIXED_TTT_SEAMLESS || m_rrc->m_handoverMode == LteEnbRrc::DYNAMIC_TTT_SEAMLESS || m_rrc->m_handoverMode == LteEnbRrc::GREEDY || m_rrc->m_handoverMode == LteEnbRrc::NO_AUTOMATIC_HANDOVER)
+                && (timestamp >= imsiRunningTime.find(imsi)->second || timestamp < imsiArrivalTime.find(imsi)->second)){
+                    continue;
+                }
 
             auto uePms = uePmString.find(imsi)->second;
 
@@ -1098,6 +1318,143 @@ MmWaveEnbNetDevice::BuildRicIndicationMessageCuCp(std::string plmId)
     {
         return indicationMessageHelper->CreateIndicationMessage();
     }
+}
+
+std::map <std::string, std::string>
+MmWaveEnbNetDevice::BuildRicIndicationMessageCuCp(std::string plmId, bool flag)
+{      
+    std::map<std::string, std::string> cuCpReport;
+    auto ueMap = m_rrc->GetUeMap();
+    long meanRrcUes = ComputeMeanUes();
+    float timestamp = Simulator::Now().GetSeconds();
+    cuCpReport["type"] = "CuCp";
+    cuCpReport["timestamp"] = std::to_string(timestamp);
+    // cuCpReport["numActiveUes"] = std::to_string(ueMap.size());
+    int16_t numActiveUes = 0;
+    cuCpReport["cellId"] = std::to_string(m_cellId);
+    // cuCpReport["RRC.ConnMean"] = std::to_string(meanRrcUes);
+    // cuCpReport->insert({"timestamp", std::to_string(Simulator::Now().GetSeconds())});
+    // cuCpReport->insert({"numActiveUes", std::to_string(ueMap.size())});
+    // cuCpReport->insert({"cellId", std::to_string(m_cellId)});
+    // cuCpReport->insert({"RRC.ConnMean", std::to_string(meanRrcUes)});
+    
+    std::unordered_map<uint64_t, std::string> uePmString{};
+
+    std::ofstream csv{};
+    csv.open(m_cuCpFileName.c_str(), std::ios_base::app);
+    if (!csv.is_open())
+    {
+        NS_FATAL_ERROR("Can't open file " << m_cuCpFileName.c_str());
+    }
+
+    NS_LOG_DEBUG("m_cuCpFileName open " << m_cuCpFileName);
+    for (auto ue : ueMap){
+        uint64_t imsi = ue.second->GetImsi();
+        if ((m_rrc->m_handoverMode == LteEnbRrc::THRESHOLD_SEAMLESS || m_rrc->m_handoverMode == LteEnbRrc::FIXED_TTT_SEAMLESS || m_rrc->m_handoverMode == LteEnbRrc::DYNAMIC_TTT_SEAMLESS || m_rrc->m_handoverMode == LteEnbRrc::GREEDY || m_rrc->m_handoverMode == LteEnbRrc::NO_AUTOMATIC_HANDOVER)
+            && (timestamp >= imsiRunningTime.find(imsi)->second || timestamp < imsiArrivalTime.find(imsi)->second)){
+                continue;
+            }
+        numActiveUes++;
+        std::string ueImsiComplete = GetImsiString(imsi);
+        // This shall be created in connected mode and sent through the E2 Interface
+        // Since now they are now integrated in the asn1 definiton and they are leaking
+        // I'll just comment them
+        // Ptr<MeasurementItemList> ueVal = Create<MeasurementItemList> (ueImsiComplete);
+
+        long numDrb = ue.second->GetDrbMap().size();
+
+        // create L3 RRC reports
+
+        // for the same cell
+        double sinrThisCell = 10 * std::log10(m_l3sinrMap[imsi][m_cellId]);
+        double convertedSinr = L3RrcMeasurements::ThreeGppMapSinr(sinrThisCell);
+        cuCpReport["imsi"] = std::to_string(imsi);
+        // cuCpReport["numDRB" + std::to_string(imsi)] = std::to_string(numDrb);
+        // cuCpReport["servingSINR" + std::to_string(imsi)] = std::to_string(sinrThisCell);
+        cuCpReport["servingSINR"] = std::to_string(sinrThisCell);
+        // cuCpReport["servingSINR3GPP" + std::to_string(imsi)] = std::to_string(convertedSinr);
+        NS_LOG_DEBUG(Simulator::Now().GetSeconds()
+                             << " enbdev " << m_cellId << " UE " << imsi << " L3 serving SINR "
+                             << sinrThisCell << " L3 serving SINR 3gpp " << convertedSinr);
+        // cuCpReport->insert({"numDRB" + std::to
+        // cuCpReport->insert({"IMSI" + std::to_string(imsi), ueImsiComplete});
+        // cuCpReport->insert({"servingSINR" + std::to_string(imsi), std::to_string(sinrThisCell)});
+        // cuCpReport->insert({"servingSINR3GPP" + std::to_string(imsi), std::to_string(convertedSinr)});
+
+        // Ptr<L3RrcMeasurements> l3RrcMeasurementServing = L3RrcMeasurements::CreateL3RrcUeSpecificSinrServing(m_cellId, m_cellId, convertedSinr);
+        std::string servingStr = std::to_string(numDrb) + "," + std::to_string(0) + "," +
+                                 std::to_string(m_cellId) + "," + std::to_string(imsi) + "," +
+                                 std::to_string(sinrThisCell) + "," + std::to_string(convertedSinr);
+        // Ptr<L3RrcMeasurements> l3RrcMeasurementNeigh = L3RrcMeasurements::CreateL3RrcUeSpecificSinrNeigh();
+        double sinr;
+        std::string neighStr;
+
+        // invert key and value in sortFlipMap, then sort by value
+        std::multimap<long double, uint16_t> sortFlipMap = flip_map(m_l3sinrMap[imsi]);
+        // new sortFlipMap structure sortFlipMap < sinr, cellId >
+        // The assumption is that the first cell in the scenario is always LTE and the rest NR
+        uint16_t nNeighbours = E2SM_REPORT_MAX_NEIGH;
+        if (m_l3sinrMap[imsi].size() < nNeighbours)
+        {
+            nNeighbours = m_l3sinrMap[imsi].size() - 1;
+        }
+        int itIndex = 0;
+        // Save only the first E2SM_REPORT_MAX_NEIGH SINR for each UE which represent the best
+        // values among all the SINRs detected by all the cells
+        for (std::map<long double, uint16_t>::iterator it = --sortFlipMap.end(); it != --sortFlipMap.begin() && itIndex < nNeighbours; it--){
+            uint16_t cellId = it->second;
+            if (cellId != m_cellId){
+                sinr = 10 * std::log10(it->first); // now SINR is a key due to the sort of the map
+                convertedSinr = L3RrcMeasurements::ThreeGppMapSinr(sinr);
+                // l3RrcMeasurementNeigh->AddNeighbourCellMeasurement(cellId, convertedSinr);
+                NS_LOG_DEBUG(Simulator::Now().GetSeconds()
+                             << " enbdev " << m_cellId << " UE " << imsi << " L3 neigh " << cellId
+                             << " SINR " << sinr << " sinr encoded " << convertedSinr
+                             << " first insert");
+                neighStr += "," + std::to_string(cellId) + "," + std::to_string(sinr) + "," +
+                            std::to_string(convertedSinr);
+                
+                // cuCpReport["neighId" + std::to_string(itIndex)] = std::to_string(cellId);
+                // cuCpReport["neighSINR" + std::to_string(itIndex)] = std::to_string(sinr);
+                cuCpReport["neighSINR" + std::to_string(cellId)] = std::to_string(sinr);
+                itIndex++; 
+                // cuCpReport[std::to_string(imsi) + "neighId" + std::to_string(itIndex)] = std::to_string(cellId);
+                // cuCpReport[std::to_string(imsi) + "neighSINR" + std::to_string(itIndex)] = std::to_string(sinr);
+                // cuCpReport[std::to_string(imsi) + "neighSINR3GPP" + std::to_string(itIndex)] = std::to_string(convertedSinr);
+
+                // cuCpReport->insert({std::to_string(imsi) + "neighId" + std::to_string(itIndex), std::to_string(cellId)});
+                // cuCpReport->insert({std::to_string(imsi) + "neigh" + std::to_string(itIndex) + "SINR", std::to_string(sinr)});
+                // cuCpReport->insert({std::to_string(imsi) + "neigh" + std::to_string(itIndex) + "SINR3GPP", std::to_string(convertedSinr)});
+                }
+   
+        }
+        for (int i = nNeighbours; i < E2SM_REPORT_MAX_NEIGH; i++)
+        {
+            neighStr += ",,,";
+        }
+        uePmString.insert(std::make_pair(imsi, servingStr + neighStr));
+        // the string is timestamp, ueImsiComplete, numActiveUes,RRC.ConnMean,
+        // DRB.EstabSucc.5QI.UEID (numDrb), DRB.RelActNbr.5QI.UEID (0), L3 serving Id (m_cellId), UE
+        // (imsi), L3 serving SINR, L3 serving SINR 3gpp, L3 neigh Id (cellId), L3 neigh Sinr, L3
+        // neigh SINR 3gpp (convertedSinr) The values for L3 neighbour cells are repeated for each
+        // neighbour (7 times in this implementation)
+
+        // uint64_t timestamp = m_startTime + Simulator::Now().GetMilliSeconds();
+
+
+
+        auto uePms = uePmString.find(imsi)->second;
+
+        std::string to_print = std::to_string(timestamp) + "," + ueImsiComplete + "," +
+                                std::to_string(ueMap.size()) + "," + std::to_string(meanRrcUes) +
+                                "," + uePms + "\n";
+
+        // NS_LOG_DEBUG(to_print);
+        csv << to_print;
+    }
+    cuCpReport["numActiveUes"] = std::to_string(numActiveUes);
+    csv.close();
+    return cuCpReport;
 }
 
 uint32_t
@@ -1158,11 +1515,17 @@ MmWaveEnbNetDevice::BuildRicIndicationMessageDu(std::string plmId, uint16_t nrCe
     uint32_t macPrbsCellSpecific = 0;
 
     std::unordered_map<uint64_t, std::string> uePmStringDu{};
+    float timestamp = Simulator::Now().GetSeconds();
 
     for (auto ue : ueMap)
     {
         uint64_t imsi = ue.second->GetImsi();
         std::string ueImsiComplete = GetImsiString(imsi);
+        if ((m_rrc->m_handoverMode == LteEnbRrc::THRESHOLD_SEAMLESS || m_rrc->m_handoverMode == LteEnbRrc::FIXED_TTT_SEAMLESS || m_rrc->m_handoverMode == LteEnbRrc::DYNAMIC_TTT_SEAMLESS || m_rrc->m_handoverMode == LteEnbRrc::GREEDY || m_rrc->m_handoverMode == LteEnbRrc::NO_AUTOMATIC_HANDOVER)
+            && (timestamp >= imsiRunningTime.find(imsi)->second || timestamp < imsiArrivalTime.find(imsi)->second)){
+                continue;
+            }
+
         uint16_t rnti = ue.second->GetRnti();
 
         uint32_t macPduUe = m_e2DuCalculator->GetMacPduUeSpecific(rnti, m_cellId);
@@ -1437,7 +1800,8 @@ MmWaveEnbNetDevice::BuildRicIndicationMessageDu(std::string plmId, uint16_t nrCe
             NS_FATAL_ERROR("Can't open file " << m_duFileName.c_str());
         }
 
-        uint64_t timestamp = m_startTime + Simulator::Now().GetMilliSeconds();
+        // uint64_t timestamp = m_startTime + Simulator::Now().GetMilliSeconds();
+        // float timestamp = Simulator::Now().GetSeconds();
 
         // the string is timestamp, ueImsiComplete, plmId, nrCellId, dlAvailablePrbs,
         // ulAvailablePrbs, qci , dlPrbUsage, ulPrbUsage, /*CellSpecificValues*/, /*
@@ -1493,6 +1857,10 @@ MmWaveEnbNetDevice::BuildRicIndicationMessageDu(std::string plmId, uint16_t nrCe
         {
             uint64_t imsi = ue.second->GetImsi();
             std::string ueImsiComplete = GetImsiString(imsi);
+            if ((m_rrc->m_handoverMode == LteEnbRrc::THRESHOLD_SEAMLESS || m_rrc->m_handoverMode == LteEnbRrc::FIXED_TTT_SEAMLESS || m_rrc->m_handoverMode == LteEnbRrc::DYNAMIC_TTT_SEAMLESS || m_rrc->m_handoverMode == LteEnbRrc::GREEDY || m_rrc->m_handoverMode == LteEnbRrc::NO_AUTOMATIC_HANDOVER)
+                && (timestamp >= imsiRunningTime.find(imsi)->second || timestamp < imsiArrivalTime.find(imsi)->second)){
+                    continue;
+                }
 
             auto uePms = uePmStringDu.find(imsi)->second;
 
@@ -1511,6 +1879,347 @@ MmWaveEnbNetDevice::BuildRicIndicationMessageDu(std::string plmId, uint16_t nrCe
     }
 }
 
+std::map <std::string, std::string>
+MmWaveEnbNetDevice::BuildRicIndicationMessageDu(std::string plmId, uint16_t nrCellId, bool flag){
+    std::map <std::string, std::string> duReport;
+    auto ueMap = m_rrc->GetUeMap();
+    duReport["type"] = "Du";
+    float timestamp = Simulator::Now().GetSeconds();
+    duReport["timestamp"] = std::to_string(timestamp);
+    // duReport["numActiveUes"] = std::to_string(ueMap.size());
+    duReport["cellId"] = std::to_string(nrCellId);
+
+    uint32_t macPduCellSpecific = 0;
+    uint32_t macPduInitialCellSpecific = 0;
+    uint32_t macVolumeCellSpecific = 0;
+    uint32_t macQpskCellSpecific = 0;
+    uint32_t mac16QamCellSpecific = 0;
+    uint32_t mac64QamCellSpecific = 0;
+    uint32_t macRetxCellSpecific = 0;
+    uint32_t macMac04CellSpecific = 0;
+    uint32_t macMac59CellSpecific = 0;
+    uint32_t macMac1014CellSpecific = 0;
+    uint32_t macMac1519CellSpecific = 0;
+    uint32_t macMac2024CellSpecific = 0;
+    uint32_t macMac2529CellSpecific = 0;
+
+    uint32_t macSinrBin1CellSpecific = 0;
+    uint32_t macSinrBin2CellSpecific = 0;
+    uint32_t macSinrBin3CellSpecific = 0;
+    uint32_t macSinrBin4CellSpecific = 0;
+    uint32_t macSinrBin5CellSpecific = 0;
+    uint32_t macSinrBin6CellSpecific = 0;
+    uint32_t macSinrBin7CellSpecific = 0;
+
+    uint32_t rlcBufferOccupCellSpecific = 0;
+
+    uint32_t macPrbsCellSpecific = 0;
+
+    std::unordered_map<uint64_t, std::string> uePmStringDu{};
+    std::ofstream csv{};
+    csv.open(m_duFileName.c_str(), std::ios_base::app);
+    if (!csv.is_open())
+    {
+        NS_FATAL_ERROR("Can't open file " << m_duFileName.c_str());
+    }
+
+    for (auto ue : ueMap)
+    {
+        uint64_t imsi = ue.second->GetImsi();
+        if ((m_rrc->m_handoverMode == LteEnbRrc::THRESHOLD_SEAMLESS || m_rrc->m_handoverMode == LteEnbRrc::FIXED_TTT_SEAMLESS || m_rrc->m_handoverMode == LteEnbRrc::DYNAMIC_TTT_SEAMLESS || m_rrc->m_handoverMode == LteEnbRrc::GREEDY || m_rrc->m_handoverMode == LteEnbRrc::NO_AUTOMATIC_HANDOVER)
+            && (timestamp >= imsiRunningTime.find(imsi)->second || timestamp < imsiArrivalTime.find(imsi)->second)){
+                continue;
+            }
+        std::string ueImsiComplete = GetImsiString(imsi);
+        uint16_t rnti = ue.second->GetRnti();
+
+        uint32_t macPduUe = m_e2DuCalculator->GetMacPduUeSpecific(rnti, m_cellId);
+
+        macPduCellSpecific += macPduUe;
+        m_macPduCellSpecific = macPduCellSpecific;
+
+        uint32_t macPduInitialUe =
+            m_e2DuCalculator->GetMacPduInitialTransmissionUeSpecific(rnti, m_cellId);
+        macPduInitialCellSpecific += macPduInitialUe;
+
+        uint32_t macVolume = m_e2DuCalculator->GetMacVolumeUeSpecific(rnti, m_cellId);
+        macVolumeCellSpecific += macVolume;
+        m_macVolumeCellSpecific = macVolumeCellSpecific;
+
+        uint32_t macQpsk = m_e2DuCalculator->GetMacPduQpskUeSpecific(rnti, m_cellId);
+        macQpskCellSpecific += macQpsk;
+
+        uint32_t mac16Qam = m_e2DuCalculator->GetMacPdu16QamUeSpecific(rnti, m_cellId);
+        mac16QamCellSpecific += mac16Qam;
+
+        uint32_t mac64Qam = m_e2DuCalculator->GetMacPdu64QamUeSpecific(rnti, m_cellId);
+        mac64QamCellSpecific += mac64Qam;
+
+        uint32_t macRetx = m_e2DuCalculator->GetMacPduRetransmissionUeSpecific(rnti, m_cellId);
+        macRetxCellSpecific += macRetx;
+
+        // Numerator = (Sum of number of symbols across all rows (TTIs) group by cell ID and UE ID
+        // within a given time window)
+        double macNumberOfSymbols =
+            m_e2DuCalculator->GetMacNumberOfSymbolsUeSpecific(rnti, m_cellId);
+
+        auto phyMac = GetMac()->GetConfigurationParameters();
+        // Denominator = (Periodicity of the report time window in ms*number of TTIs per ms*14)
+        Time reportingWindow =
+            Simulator::Now() - m_e2DuCalculator->GetLastResetTime(rnti, m_cellId);
+        double denominatorPrb =
+            std::ceil(reportingWindow.GetNanoSeconds() / phyMac->GetSlotPeriod().GetNanoSeconds()) *
+            14;
+
+        NS_LOG_DEBUG("macNumberOfSymbols " << macNumberOfSymbols << " denominatorPrb "
+                                           << denominatorPrb);
+
+        // Average Number of PRBs allocated for the UE = (NR/DR)*139 (where 139 is the total number
+        // of PRBs available per NR cell, given numerology 2 with 60 kHz SCS)
+        double macPrb = 0;
+        if (denominatorPrb != 0)
+        {
+            macPrb = macNumberOfSymbols / denominatorPrb *
+                     139; // TODO fix this for different numerologies
+        }
+        macPrbsCellSpecific += macPrb;
+
+        uint32_t macMac04 = m_e2DuCalculator->GetMacMcs04UeSpecific(rnti, m_cellId);
+        macMac04CellSpecific += macMac04;
+
+        uint32_t macMac59 = m_e2DuCalculator->GetMacMcs59UeSpecific(rnti, m_cellId);
+        macMac59CellSpecific += macMac59;
+
+        uint32_t macMac1014 = m_e2DuCalculator->GetMacMcs1014UeSpecific(rnti, m_cellId);
+        macMac1014CellSpecific += macMac1014;
+
+        uint32_t macMac1519 = m_e2DuCalculator->GetMacMcs1519UeSpecific(rnti, m_cellId);
+        macMac1519CellSpecific += macMac1519;
+
+        uint32_t macMac2024 = m_e2DuCalculator->GetMacMcs2024UeSpecific(rnti, m_cellId);
+        macMac2024CellSpecific += macMac2024;
+
+        uint32_t macMac2529 = m_e2DuCalculator->GetMacMcs2529UeSpecific(rnti, m_cellId);
+        macMac2529CellSpecific += macMac2529;
+
+        uint32_t macSinrBin1 = m_e2DuCalculator->GetMacSinrBin1UeSpecific(rnti, m_cellId);
+        macSinrBin1CellSpecific += macSinrBin1;
+
+        uint32_t macSinrBin2 = m_e2DuCalculator->GetMacSinrBin2UeSpecific(rnti, m_cellId);
+        macSinrBin2CellSpecific += macSinrBin2;
+
+        uint32_t macSinrBin3 = m_e2DuCalculator->GetMacSinrBin3UeSpecific(rnti, m_cellId);
+        macSinrBin3CellSpecific += macSinrBin3;
+
+        uint32_t macSinrBin4 = m_e2DuCalculator->GetMacSinrBin4UeSpecific(rnti, m_cellId);
+        macSinrBin4CellSpecific += macSinrBin4;
+
+        uint32_t macSinrBin5 = m_e2DuCalculator->GetMacSinrBin5UeSpecific(rnti, m_cellId);
+        macSinrBin5CellSpecific += macSinrBin5;
+
+        uint32_t macSinrBin6 = m_e2DuCalculator->GetMacSinrBin6UeSpecific(rnti, m_cellId);
+        macSinrBin6CellSpecific += macSinrBin6;
+
+        uint32_t macSinrBin7 = m_e2DuCalculator->GetMacSinrBin7UeSpecific(rnti, m_cellId);
+        macSinrBin7CellSpecific += macSinrBin7;
+
+        // get buffer occupancy info
+        uint32_t rlcBufferOccup = 0;
+        auto drbMap = ue.second->GetDrbMap();
+        for (auto drb : drbMap)
+        {
+            auto rlc = drb.second->m_rlc;
+            rlcBufferOccup += GetRlcBufferOccupancy(rlc);
+        }
+        auto rlcMap = ue.second->GetRlcMap(); // secondary-connected RLCs
+        for (auto drb : rlcMap)
+        {
+            auto rlc = drb.second->m_rlc;
+            rlcBufferOccup += GetRlcBufferOccupancy(rlc);
+        }
+        rlcBufferOccupCellSpecific += rlcBufferOccup;
+
+        NS_LOG_DEBUG(Simulator::Now().GetSeconds()
+                     << " " << m_cellId << " cell, connected UE with IMSI " << imsi << " rnti "
+                     << rnti << " macPduUe " << macPduUe << " macPduInitialUe " << macPduInitialUe
+                     << " macVolume " << macVolume << " macQpsk " << macQpsk << " mac16Qam "
+                     << mac16Qam << " mac64Qam " << mac64Qam << " macRetx " << macRetx << " macPrb "
+                     << macPrb << " macMac04 " << macMac04 << " macMac59 " << macMac59
+                     << " macMac1014 " << macMac1014 << " macMac1519 " << macMac1519
+                     << " macMac2024 " << macMac2024 << " macMac2529 " << macMac2529
+                     << " macSinrBin1 " << macSinrBin1 << " macSinrBin2 " << macSinrBin2
+                     << " macSinrBin3 " << macSinrBin3 << " macSinrBin4 " << macSinrBin4
+                     << " macSinrBin5 " << macSinrBin5 << " macSinrBin6 " << macSinrBin6
+                     << " macSinrBin7 " << macSinrBin7 << " rlcBufferOccup " << rlcBufferOccup);
+
+        // UE-specific Downlink IP combined EN-DC throughput from LTE eNB. Unit is kbps. Pdcp based
+        // computation This value is not requested anymore, so it has been removed from the
+        // delivery, but it will be still logged;
+        double drbThrDlPdcpBasedUeid = m_drbThrDlPdcpBasedComputationUeid.find(imsi) !=
+                                               m_drbThrDlPdcpBasedComputationUeid.end()
+                                           ? m_drbThrDlPdcpBasedComputationUeid.at(imsi)
+                                           : 0;
+
+        // UE-specific Downlink IP combined EN-DC throughput from LTE eNB. Unit is kbps. Rlc based
+        // computation
+        double drbThrDlUeid =
+            m_drbThrDlUeid.find(imsi) != m_drbThrDlUeid.end() ? m_drbThrDlUeid.at(imsi) : 0;
+
+
+
+        uePmStringDu.insert(std::make_pair(
+            imsi,
+            std::to_string(macPduUe) + "," + std::to_string(macPduInitialUe) + "," +
+                std::to_string(macQpsk) + "," + std::to_string(mac16Qam) + "," +
+                std::to_string(mac64Qam) + "," + std::to_string(macRetx) + "," +
+                std::to_string(macVolume) + "," + std::to_string(macPrb) + "," +
+                std::to_string(macMac04) + "," + std::to_string(macMac59) + "," +
+                std::to_string(macMac1014) + "," + std::to_string(macMac1519) + "," +
+                std::to_string(macMac2024) + "," + std::to_string(macMac2529) + "," +
+                std::to_string(macSinrBin1) + "," + std::to_string(macSinrBin2) + "," +
+                std::to_string(macSinrBin3) + "," + std::to_string(macSinrBin4) + "," +
+                std::to_string(macSinrBin5) + "," + std::to_string(macSinrBin6) + "," +
+                std::to_string(macSinrBin7) + "," + std::to_string(rlcBufferOccup) + ',' +
+                std::to_string(drbThrDlUeid) + ',' + std::to_string(drbThrDlPdcpBasedUeid)));
+
+        // reset UE
+        m_e2DuCalculator->ResetPhyTracesForRntiCellId(rnti, m_cellId);
+    }
+
+    m_drbThrDlPdcpBasedComputationUeid.clear();
+    m_drbThrDlUeid.clear();
+
+    // Denominator = (Total number of rows (TTIs) within a given time window* 14)
+    // Numerator = (Sum of number of symbols across all rows (TTIs) group by cell ID within a given
+    // time window) * 139 Average Number of PRBs allocated for the UE = (NR/DR) (where 139 is the
+    // total number of PRBs available per NR cell, given numerology 2 with 60 kHz SCS)
+    double prbUtilizationDl = macPrbsCellSpecific;
+    // double m_prbUtilizationDlAttr = prbUtilizationDl;
+
+    NS_LOG_DEBUG(
+        Simulator::Now().GetSeconds()
+        << " " << m_cellId << " cell, connected UEs number " << ueMap.size()
+        << " macPduCellSpecific " << macPduCellSpecific << " macPduInitialCellSpecific "
+        << macPduInitialCellSpecific << " macVolumeCellSpecific " << macVolumeCellSpecific
+        << " macQpskCellSpecific " << macQpskCellSpecific << " mac16QamCellSpecific "
+        << mac16QamCellSpecific << " mac64QamCellSpecific " << mac64QamCellSpecific
+        << " macRetxCellSpecific " << macRetxCellSpecific << " macPrbsCellSpecific "
+        << macPrbsCellSpecific //<< " " << macNumberOfSymbolsCellSpecific << " " << denominatorPrb
+        << " macMac04CellSpecific " << macMac04CellSpecific << " macMac59CellSpecific "
+        << macMac59CellSpecific << " macMac1014CellSpecific " << macMac1014CellSpecific
+        << " macMac1519CellSpecific " << macMac1519CellSpecific << " macMac2024CellSpecific "
+        << macMac2024CellSpecific << " macMac2529CellSpecific " << macMac2529CellSpecific
+        << " macSinrBin1CellSpecific " << macSinrBin1CellSpecific << " macSinrBin2CellSpecific "
+        << macSinrBin2CellSpecific << " macSinrBin3CellSpecific " << macSinrBin3CellSpecific
+        << " macSinrBin4CellSpecific " << macSinrBin4CellSpecific << " macSinrBin5CellSpecific "
+        << macSinrBin5CellSpecific << " macSinrBin6CellSpecific " << macSinrBin6CellSpecific
+        << " macSinrBin7CellSpecific " << macSinrBin7CellSpecific);
+
+    long dlAvailablePrbs = 139; // TODO this is for the current configuration, make it configurable
+    long ulAvailablePrbs = 139; // TODO this is for the current configuration, make it configurable
+    long qci = 1;
+    long dlPrbUsage = std::min((long)(prbUtilizationDl / dlAvailablePrbs * 100),
+                               (long)100); // percentage of used PRBs
+    long ulPrbUsage = 0;                   // TODO for future implementation
+
+    
+
+    // uint64_t timestamp = m_startTime + Simulator::Now().GetMilliSeconds();
+
+    // the string is timestamp, ueImsiComplete, plmId, nrCellId, dlAvailablePrbs,
+    // ulAvailablePrbs, qci , dlPrbUsage, ulPrbUsage, /*CellSpecificValues*/, /*
+    // UESpecificValues */
+
+    /*
+        CellSpecificValues:
+        TB.TotNbrDl.1, TB.TotNbrDlInitial, TB.TotNbrDlInitial.Qpsk, TB.TotNbrDlInitial.16Qam,
+        TB.TotNbrDlInitial.64Qam, RRU.PrbUsedDl, TB.ErrTotalNbrDl.1,
+        QosFlow.PdcpPduVolumeDL_Filter, CARR.PDSCHMCSDist.Bin1, CARR.PDSCHMCSDist.Bin2,
+        CARR.PDSCHMCSDist.Bin3, CARR.PDSCHMCSDist.Bin4, CARR.PDSCHMCSDist.Bin5,
+        CARR.PDSCHMCSDist.Bin6, L1M.RS-SINR.Bin34, L1M.RS-SINR.Bin46, L1M.RS-SINR.Bin58,
+        L1M.RS-SINR.Bin70, L1M.RS-SINR.Bin82, L1M.RS-SINR.Bin94, L1M.RS-SINR.Bin127,
+        DRB.BufferSize.Qos, DRB.MeanActiveUeDl
+    */
+
+    std::string to_print_cell =
+        plmId + "," + std::to_string(nrCellId) + "," + std::to_string(dlAvailablePrbs) + "," +
+        std::to_string(ulAvailablePrbs) + "," + std::to_string(qci) + "," +
+        std::to_string(dlPrbUsage) + "," + std::to_string(ulPrbUsage) + "," +
+        std::to_string(macPduCellSpecific) + "," + std::to_string(macPduInitialCellSpecific) +
+        "," + std::to_string(macQpskCellSpecific) + "," + std::to_string(mac16QamCellSpecific) +
+        "," + std::to_string(mac64QamCellSpecific) + "," +
+        std::to_string((long)std::ceil(prbUtilizationDl)) + "," +
+        std::to_string(macRetxCellSpecific) + "," + std::to_string(macVolumeCellSpecific) +
+        "," + std::to_string(macMac04CellSpecific) + "," +
+        std::to_string(macMac59CellSpecific) + "," + std::to_string(macMac1014CellSpecific) +
+        "," + std::to_string(macMac1519CellSpecific) + "," +
+        std::to_string(macMac2024CellSpecific) + "," + std::to_string(macMac2529CellSpecific) +
+        "," + std::to_string(macSinrBin1CellSpecific) + "," +
+        std::to_string(macSinrBin2CellSpecific) + "," +
+        std::to_string(macSinrBin3CellSpecific) + "," +
+        std::to_string(macSinrBin4CellSpecific) + "," +
+        std::to_string(macSinrBin5CellSpecific) + "," +
+        std::to_string(macSinrBin6CellSpecific) + "," +
+        std::to_string(macSinrBin7CellSpecific) + "," +
+        std::to_string(rlcBufferOccupCellSpecific) + "," + std::to_string(ueMap.size());
+        // duReport["macPduCellSpecific"] = std::to_string(macPduCellSpecific);
+        duReport["macPduInitialCellSpecific"] = std::to_string(macPduInitialCellSpecific);
+        duReport["macQpskCellSpecific"] = std::to_string(macQpskCellSpecific);
+        duReport["mac16QamCellSpecific"] = std::to_string(mac16QamCellSpecific);
+        duReport["mac64QamCellSpecific"] = std::to_string(mac64QamCellSpecific);
+        // duReport["prbUsedDl"] = std::to_string(prbUtilizationDl);
+        duReport["macRetxCellSpecific"] = std::to_string(macRetxCellSpecific);
+        // duReport["macVolumeCellSpecific"] = std::to_string(macVolumeCellSpecific);
+        // duReport["macMac04CellSpecific"] = std::to_string(macMac04CellSpecific);
+        // duReport["macMac59CellSpecific"] = std::to_string(macMac59CellSpecific);
+        // duReport["macMac1014CellSpecific"] = std::to_string(macMac1014CellSpecific);
+        // duReport["macMac1519CellSpecific"] = std::to_string(macMac1519CellSpecific);
+        // duReport["macMac2024CellSpecific"] = std::to_string(macMac2024CellSpecific);
+        // duReport["macMac2529CellSpecific"] = std::to_string(macMac2529CellSpecific);
+        // duReport["macSinrBin1CellSpecific"] = std::to_string(macSinrBin1CellSpecific);
+        // duReport["macSinrBin2CellSpecific"] = std::to_string(macSinrBin2CellSpecific);
+        // duReport["macSinrBin3CellSpecific"] = std::to_string(macSinrBin3CellSpecific);
+        // duReport["macSinrBin4CellSpecific"] = std::to_string(macSinrBin4CellSpecific);
+        // duReport["macSinrBin5CellSpecific"] = std::to_string(macSinrBin5CellSpecific);
+        // duReport["macSinrBin6CellSpecific"] = std::to_string(macSinrBin6CellSpecific);
+        // duReport["macSinrBin7CellSpecific"] = std::to_string(macSinrBin7CellSpecific);
+        // duReport["rlcBufferOccupCellSpecific"] = std::to_string(rlcBufferOccupCellSpecific);
+
+        /*
+          UESpecificValues:
+
+              TB.TotNbrDl.1.UEID, TB.TotNbrDlInitial.UEID, TB.TotNbrDlInitial.Qpsk.UEID,
+          TB.TotNbrDlInitial.16Qam.UEID,TB.TotNbrDlInitial.64Qam.UEID, TB.ErrTotalNbrDl.1.UEID,
+          QosFlow.PdcpPduVolumeDL_Filter.UEID, RRU.PrbUsedDl.UEID, CARR.PDSCHMCSDist.Bin1.UEID,
+          CARR.PDSCHMCSDist.Bin2.UEID, CARR.PDSCHMCSDist.Bin3.UEID, CARR.PDSCHMCSDist.Bin5.UEID,
+          CARR.PDSCHMCSDist.Bin6.UEID, L1M.RS-SINR.Bin34.UEID, L1M.RS-SINR.Bin46.UEID,
+          L1M.RS-SINR.Bin58.UEID, L1M.RS-SINR.Bin70.UEID, L1M.RS-SINR.Bin82.UEID,
+          L1M.RS-SINR.Bin94.UEID, L1M.RS-SINR.Bin127.UEID, DRB.BufferSize.Qos.UEID,
+          DRB.UEThpDl.UEID,DRB.UEThpDlPdcpBased.UEID    
+        */
+
+        for (auto ue : ueMap)
+        {
+            uint64_t imsi = ue.second->GetImsi();
+            std::string ueImsiComplete = GetImsiString(imsi);
+            if ((m_rrc->m_handoverMode == LteEnbRrc::THRESHOLD_SEAMLESS || m_rrc->m_handoverMode == LteEnbRrc::FIXED_TTT_SEAMLESS || m_rrc->m_handoverMode == LteEnbRrc::DYNAMIC_TTT_SEAMLESS || m_rrc->m_handoverMode == LteEnbRrc::GREEDY || m_rrc->m_handoverMode == LteEnbRrc::NO_AUTOMATIC_HANDOVER)
+                && (timestamp >= imsiRunningTime.find(imsi)->second || timestamp < imsiArrivalTime.find(imsi)->second)){
+                    continue;
+                }
+
+            auto uePms = uePmStringDu.find(imsi)->second;
+
+            std::string to_print = std::to_string(timestamp) + "," + ueImsiComplete + "," +
+                                   to_print_cell + "," + uePms + "\n";
+
+            csv << to_print;
+        }
+    
+
+    csv.close();
+    return duReport;
+}
+
 void
 MmWaveEnbNetDevice::BuildAndSendReportMessage(E2Termination::RicSubscriptionRequest_rval_s params)
 {
@@ -1520,15 +2229,32 @@ MmWaveEnbNetDevice::BuildAndSendReportMessage(E2Termination::RicSubscriptionRequ
     // TODO here we can get something from RRC and onward
     NS_LOG_DEBUG("MmWaveEnbNetDevice " << m_cellId << " BuildAndSendMessage at time "
                                        << Simulator::Now().GetSeconds());
-
+    uint8_t* arrayPtr;
+    size_t arrayLength;
+    std::vector<char> buffer;
     if (m_sendCuUp)
     {
         // Create CU-UP
         Ptr<KpmIndicationHeader> header = BuildRicIndicationHeader(plmId, gnbId, m_cellId);
-        Ptr<KpmIndicationMessage> cuUpMsg = BuildRicIndicationMessageCuUp(plmId);
+        if (m_forceE2FileLogging){
+            Ptr<KpmIndicationMessage> cuUpMsg = BuildRicIndicationMessageCuUp(plmId);
+        }
+        else{
+            std::map <std::string, std::string> cuUpMsg = BuildRicIndicationMessageCuUp(plmId, true);
+            buffer = serialize_map(cuUpMsg);
+            arrayPtr = reinterpret_cast<uint8_t*>(buffer.data());
+            arrayLength = buffer.size();
+            // std::cout << "serialize_map输出大小: " << buffer.size() << std::endl;
+            // for (size_t i = 0; i < buffer.size(); i++) {
+            //     // printf("%02x ", (unsigned char)buffer[i]);
+            //     printf("%02x ", (unsigned char)arrayPtr[i]);
+            //     if ((i + 1) % 16 == 0) std::cout << std::endl;
+            // }
+            // std::cout << std::endl;
+        }     
 
         // Send CU-UP only if offline logging is disabled
-        if (!m_forceE2FileLogging && header != nullptr && cuUpMsg != nullptr)
+        if (!m_forceE2FileLogging && header != nullptr) // && cuUpMsg != nullptr)
         {
             NS_LOG_DEBUG("Send NR CU-UP");
             E2AP_PDU* pdu_cuup_ue = new E2AP_PDU;
@@ -1541,8 +2267,17 @@ MmWaveEnbNetDevice::BuildAndSendReportMessage(E2Termination::RicSubscriptionRequ
                 1,                           // TODO sequence number
                 (uint8_t*)header->m_buffer,  // buffer containing the encoded header
                 header->m_size,              // size of the encoded header
-                (uint8_t*)cuUpMsg->m_buffer, // buffer containing the encoded message
-                cuUpMsg->m_size);            // size of the encoded message
+                arrayPtr,
+                arrayLength); // (uint8_t*)
+                // (uint8_t*)cuUpMsg->m_buffer, // buffer containing the encoded message
+                // cuUpMsg->m_size);            // size of the encoded message
+            // for (size_t i = 0; i < arrayLength; i++) {
+            //     // printf("%02x ", (unsigned char)buffer[i]);
+            //     printf("%02x ", (unsigned char)arrayPtr[i]);
+            //     if ((i + 1) % 16 == 0) std::cout << std::endl;
+            // }
+            // std::cout << std::endl;
+
             m_e2term->SendE2Message(pdu_cuup_ue);
             delete pdu_cuup_ue;
         }
@@ -1552,10 +2287,18 @@ MmWaveEnbNetDevice::BuildAndSendReportMessage(E2Termination::RicSubscriptionRequ
     {
         // Create and send CU-CP
         Ptr<KpmIndicationHeader> header = BuildRicIndicationHeader(plmId, gnbId, m_cellId);
-        Ptr<KpmIndicationMessage> cuCpMsg = BuildRicIndicationMessageCuCp(plmId);
+        if (m_forceE2FileLogging){
+            Ptr<KpmIndicationMessage> cuCpMsg = BuildRicIndicationMessageCuCp(plmId);
+        }
+        else{
+            std::map <std::string, std::string> cuCpMsg = BuildRicIndicationMessageCuCp(plmId, true);
+            buffer = serialize_map(cuCpMsg);
+            arrayPtr = reinterpret_cast<uint8_t*>(buffer.data());
+            arrayLength = buffer.size();
+        }      
 
         // Send CU-CP only if offline logging is disabled
-        if (!m_forceE2FileLogging && header != nullptr && cuCpMsg != nullptr)
+        if (!m_forceE2FileLogging && header != nullptr) // && cuCpMsg != nullptr)
         {
             NS_LOG_DEBUG("Send NR CU-CP");
             E2AP_PDU* pdu_cucp_ue = new E2AP_PDU;
@@ -1568,8 +2311,10 @@ MmWaveEnbNetDevice::BuildAndSendReportMessage(E2Termination::RicSubscriptionRequ
                 1,                           // TODO sequence number
                 (uint8_t*)header->m_buffer,  // buffer containing the encoded header
                 header->m_size,              // size of the encoded header
-                (uint8_t*)cuCpMsg->m_buffer, // buffer containing the encoded message
-                cuCpMsg->m_size);            // size of the encoded message
+                arrayPtr, // buffer containing the encoded message
+                arrayLength);            // size of the encoded message
+                // (uint8_t*)cuCpMsg->m_buffer, // buffer containing the encoded message
+                // cuCpMsg->m_size);            // size of the encoded message
             m_e2term->SendE2Message(pdu_cucp_ue);
             delete pdu_cucp_ue;
         }
@@ -1579,10 +2324,19 @@ MmWaveEnbNetDevice::BuildAndSendReportMessage(E2Termination::RicSubscriptionRequ
     {
         // Create DU
         Ptr<KpmIndicationHeader> header = BuildRicIndicationHeader(plmId, gnbId, m_cellId);
-        Ptr<KpmIndicationMessage> duMsg = BuildRicIndicationMessageDu(plmId, m_cellId);
-
+        
+        if (m_forceE2FileLogging){
+            Ptr<KpmIndicationMessage> duMsg = BuildRicIndicationMessageDu(plmId, m_cellId);
+        }
+        else{
+            std::map <std::string, std::string> duMsg = BuildRicIndicationMessageDu(plmId, m_cellId, true);
+            buffer = serialize_map(duMsg);
+            arrayPtr = reinterpret_cast<uint8_t*>(buffer.data());
+            arrayLength = buffer.size();
+        }
+        
         // Send DU only if offline logging is disabled
-        if (!m_forceE2FileLogging && header != nullptr && duMsg != nullptr)
+        if (!m_forceE2FileLogging && header != nullptr) // && duMsg != nullptr)
         {
             NS_LOG_DEBUG("Send NR DU");
             E2AP_PDU* pdu_du_ue = new E2AP_PDU;
@@ -1595,8 +2349,10 @@ MmWaveEnbNetDevice::BuildAndSendReportMessage(E2Termination::RicSubscriptionRequ
                 1,                          // TODO sequence number
                 (uint8_t*)header->m_buffer, // buffer containing the encoded header
                 header->m_size,             // size of the encoded header
-                (uint8_t*)duMsg->m_buffer,  // buffer containing the encoded message
-                duMsg->m_size);             // size of the encoded message
+                arrayPtr, // buffer containing the encoded message
+                arrayLength);            // size of the encoded message
+                // (uint8_t*)duMsg->m_buffer,  // buffer containing the encoded message
+                // duMsg->m_size);             // size of the encoded message
             m_e2term->SendE2Message(pdu_du_ue);
             delete pdu_du_ue;
         }
