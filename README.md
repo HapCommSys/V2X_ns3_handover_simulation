@@ -1,13 +1,11 @@
-# ⚠️ Repository Moved
+# ⚠️ This Repository Has Been Superseded
 
-This repository is no longer maintained.
+This repository is no longer maintained and is retained for archival purposes.
 
-The project has been superseded by our new unified framework for O-RAN-based vehicular handover:
+The latest version of our framework is available at:
 
-👉 **[Unified Framework for Vehicular Handover](https://github.com/HapCommSys/unified-framework-for-vehicular-handover)**
+## 👉 [Unified Framework for Vehicular Handover](https://github.com/HapCommSys/unified-framework-for-vehicular-handover)
 
-Please use the new repository for the latest source code, documentation, and examples.
+The new repository provides the actively maintained implementation, documentation, and examples for our O-RAN-based vehicular handover framework.
 
----
-
-# ns3-mmwave fork for ns-O-RAN
+Please use the new repository for future development and reproducibility.
